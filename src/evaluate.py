@@ -14,37 +14,36 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
-import statistics
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 import numpy as np
 import torch
-import torch.nn as nn
-from datasets import Dataset, DatasetDict, load_dataset
+from datasets import load_dataset
+from peft import PeftModel
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     PreTrainedModel,
     PreTrainedTokenizer,
-    GenerationConfig as HFGenerationConfig,
 )
-from peft import PeftModel
 
 try:
     from rouge_score import rouge_scorer
+
     ROUGE_AVAILABLE = True
 except ImportError:
     ROUGE_AVAILABLE = False
 
 try:
     import nltk
-    from nltk.translate.bleu_score import sentence_bleu, corpus_bleu, SmoothingFunction
+    from nltk.translate.bleu_score import SmoothingFunction, corpus_bleu, sentence_bleu
     from nltk.translate.meteor_score import meteor_score
+
     NLTK_AVAILABLE = True
 except ImportError:
     nltk = None
@@ -53,6 +52,7 @@ except ImportError:
 try:
     import bert_score
     from bert_score import score as bert_score_fn
+
     BERTSCORE_AVAILABLE = True
 except ImportError:
     bert_score = None
@@ -60,24 +60,21 @@ except ImportError:
 
 try:
     import torch
+
     PERPLEXITY_AVAILABLE = True
 except ImportError:
     PERPLEXITY_AVAILABLE = False
 
 from src.config import (
-    ConfigManager,
-    GenerationConfig,
-    EvalDatasetConfig,
-    RougeConfig,
-    BleuConfig,
     BertScoreConfig,
-    PerplexityConfig,
+    BleuConfig,
+    ConfigManager,
     DistinctConfig,
+    GenerationConfig,
+    PerplexityConfig,
+    RougeConfig,
 )
 from src.model_utils import (
-    load_model_and_tokenizer,
-    load_peft_adapter,
-    get_gpu_memory_info,
     clear_gpu_cache,
 )
 
@@ -87,9 +84,10 @@ logger = logging.getLogger(__name__)
 @dataclass
 class GenerationResult:
     """Result of text generation."""
+
     prompt: str
     response: str
-    reference: Optional[str] = None
+    reference: str | None = None
     latency_ms: float = 0.0
     tokens_generated: int = 0
     input_tokens: int = 0
@@ -99,30 +97,34 @@ class GenerationResult:
 @dataclass
 class MetricResult:
     """Container for metric results."""
+
     name: str
     value: float
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class EvaluationReport:
     """Complete evaluation report."""
+
     model_name: str
     dataset_name: str
-    generation_config: Dict[str, Any]
+    generation_config: dict[str, Any]
     samples_evaluated: int
-    metrics: Dict[str, MetricResult] = field(default_factory=dict)
-    performance: Dict[str, float] = field(default_factory=dict)
-    generation_results: List[GenerationResult] = field(default_factory=list)
+    metrics: dict[str, MetricResult] = field(default_factory=dict)
+    performance: dict[str, float] = field(default_factory=dict)
+    generation_results: list[GenerationResult] = field(default_factory=list)
     timestamp: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "model_name": self.model_name,
             "dataset_name": self.dataset_name,
             "generation_config": self.generation_config,
             "samples_evaluated": self.samples_evaluated,
-            "metrics": {k: {"value": v.value, "details": v.details} for k, v in self.metrics.items()},
+            "metrics": {
+                k: {"value": v.value, "details": v.details} for k, v in self.metrics.items()
+            },
             "performance": self.performance,
             "generation_results": [
                 {
@@ -183,9 +185,7 @@ class PromptFormatter:
                 "<|assistant|>\n"
             ),
             "without_input": (
-                "<|system|>\n{system}<|end|>\n"
-                "<|user|>\n{instruction}<|end|>\n"
-                "<|assistant|>\n"
+                "<|system|>\n{system}<|end|>\n<|user|>\n{instruction}<|end|>\n<|assistant|>\n"
             ),
         },
     }
@@ -194,9 +194,9 @@ class PromptFormatter:
         self,
         template_name: str = "alpaca",
         system_message: str = "You are a helpful assistant.",
-        custom_template: Optional[Union[str, Dict[str, str]]] = None,
-        template: Optional[str] = None,
-        template_with_input: Optional[str] = None,
+        custom_template: str | dict[str, str] | None = None,
+        template: str | None = None,
+        template_with_input: str | None = None,
     ):
         self.template_name = template_name
         self.system_message = system_message
@@ -206,18 +206,32 @@ class PromptFormatter:
             self.custom_template = {"without_input": tpl_without, "with_input": tpl_with}
         elif custom_template:
             if isinstance(custom_template, str):
-                self.custom_template = {"with_input": custom_template, "without_input": custom_template}
+                self.custom_template = {
+                    "with_input": custom_template,
+                    "without_input": custom_template,
+                }
             else:
                 self.custom_template = custom_template
         else:
             self.custom_template = None
-        self.template = self.custom_template or self.TEMPLATES.get(template_name, self.TEMPLATES["alpaca"])
+        self.template = self.custom_template or self.TEMPLATES.get(
+            template_name, self.TEMPLATES["alpaca"]
+        )
 
-    def format(self, template: str = None, instruction: str = "", input_text: str = "", output: str = "", system_message: str = None) -> str:
+    def format(
+        self,
+        template: str = None,
+        instruction: str = "",
+        input_text: str = "",
+        output: str = "",
+        system_message: str = None,
+    ) -> str:
         """Format a prompt using the specified template."""
         sys_msg = system_message or self.system_message
         if self.custom_template:
-            template_str = self.custom_template.get("with_input" if input_text else "without_input", "")
+            template_str = self.custom_template.get(
+                "with_input" if input_text else "without_input", ""
+            )
             return template_str.format(
                 instruction=instruction,
                 input=input_text,
@@ -227,7 +241,7 @@ class PromptFormatter:
 
         template_name = template or self.template_name
         template_dict = self.TEMPLATES.get(template_name, self.TEMPLATES["alpaca"])
-        
+
         if input_text:
             return template_dict["with_input"].format(
                 instruction=instruction,
@@ -245,18 +259,18 @@ class MetricsCalculator:
 
     def __init__(
         self,
-        rouge_config: Optional[RougeConfig] = None,
-        bleu_config: Optional[BleuConfig] = None,
-        bertscore_config: Optional[BertScoreConfig] = None,
-        perplexity_config: Optional[PerplexityConfig] = None,
-        distinct_config: Optional[DistinctConfig] = None,
+        rouge_config: RougeConfig | None = None,
+        bleu_config: BleuConfig | None = None,
+        bertscore_config: BertScoreConfig | None = None,
+        perplexity_config: PerplexityConfig | None = None,
+        distinct_config: DistinctConfig | None = None,
         # Test compatibility: accept configs as keyword args
-        rouge: Optional[RougeConfig] = None,
-        bleu: Optional[BleuConfig] = None,
-        meteor: Optional[Any] = None,
-        bertscore: Optional[BertScoreConfig] = None,
-        perplexity: Optional[PerplexityConfig] = None,
-        distinct: Optional[DistinctConfig] = None,
+        rouge: RougeConfig | None = None,
+        bleu: BleuConfig | None = None,
+        meteor: Any | None = None,
+        bertscore: BertScoreConfig | None = None,
+        perplexity: PerplexityConfig | None = None,
+        distinct: DistinctConfig | None = None,
     ):
         # Support both API styles
         self.rouge_config = rouge_config or rouge or RougeConfig()
@@ -265,9 +279,9 @@ class MetricsCalculator:
         self.perplexity_config = perplexity_config or perplexity or PerplexityConfig()
         self.distinct_config = distinct_config or distinct or DistinctConfig()
         # meteor is not a config class, just a flag
-        self.meteor_enabled = meteor is not None and getattr(meteor, 'enabled', True)
+        self.meteor_enabled = meteor is not None and getattr(meteor, "enabled", True)
 
-    def calculate_rouge(self, predictions: List[str], references: List[str]) -> Dict[str, float]:
+    def calculate_rouge(self, predictions: list[str], references: list[str]) -> dict[str, float]:
         """Calculate ROUGE scores."""
         if not ROUGE_AVAILABLE:
             logger.warning("rouge_score not available, skipping ROUGE")
@@ -280,7 +294,7 @@ class MetricsCalculator:
 
         scores = {rouge_type: [] for rouge_type in self.rouge_config.rouge_types}
 
-        for pred, ref in zip(predictions, references):
+        for pred, ref in zip(predictions, references, strict=False):
             result = scorer.score(ref, pred)
             for rouge_type in self.rouge_config.rouge_types:
                 scores[rouge_type].append(result[rouge_type].fmeasure)
@@ -293,26 +307,45 @@ class MetricsCalculator:
                 out[f"rouge_{rt}"] = val
         return out
 
-    def calculate_bleu(self, predictions: List[str], references: List[str]) -> Dict[str, float]:
+    def calculate_bleu(self, predictions: list[str], references: list[str]) -> dict[str, float]:
         """Calculate BLEU scores."""
-        if not NLTK_AVAILABLE and not (hasattr(nltk, "translate") if 'nltk' in globals() else False):
+        if not NLTK_AVAILABLE and not (
+            hasattr(nltk, "translate") if "nltk" in globals() else False
+        ):
             logger.warning("nltk not available, skipping BLEU")
             return {}
 
-        if 'nltk' in globals() and hasattr(nltk, "translate") and hasattr(nltk.translate, "bleu_score"):
+        if (
+            "nltk" in globals()
+            and hasattr(nltk, "translate")
+            and hasattr(nltk.translate, "bleu_score")
+        ):
             corpus_bleu_fn = nltk.translate.bleu_score.corpus_bleu
-            SmoothingFunction_cls = getattr(nltk.translate.bleu_score, "SmoothingFunction", SmoothingFunction)
+            SmoothingFunction_cls = getattr(
+                nltk.translate.bleu_score, "SmoothingFunction", SmoothingFunction
+            )
         else:
             corpus_bleu_fn = corpus_bleu
             SmoothingFunction_cls = SmoothingFunction
 
         try:
             smoothing = SmoothingFunction_cls()
-            smooth_method = getattr(smoothing, f"method{self.bleu_config.smooth_method}", getattr(smoothing, "method1", None))
+            smooth_method = getattr(
+                smoothing,
+                f"method{self.bleu_config.smooth_method}",
+                getattr(smoothing, "method1", None),
+            )
         except Exception:
             smooth_method = None
 
-        tokenized_refs = [[ref.split()] if isinstance(ref, str) else [r.split() if isinstance(r, str) else r for r in ref] for ref in references]
+        tokenized_refs = [
+            (
+                [ref.split()]
+                if isinstance(ref, str)
+                else [r.split() if isinstance(r, str) else r for r in ref]
+            )
+            for ref in references
+        ]
         tokenized_preds = [pred.split() if isinstance(pred, str) else pred for pred in predictions]
 
         try:
@@ -329,22 +362,32 @@ class MetricsCalculator:
 
         return {"bleu": float(bleu_score_val) if bleu_score_val is not None else 0.0}
 
-    def calculate_meteor(self, predictions: List[str], references: List[str]) -> Dict[str, float]:
+    def calculate_meteor(self, predictions: list[str], references: list[str]) -> dict[str, float]:
         """Calculate METEOR score."""
-        if not NLTK_AVAILABLE and not (hasattr(nltk, "translate") if 'nltk' in globals() else False):
+        if not NLTK_AVAILABLE and not (
+            hasattr(nltk, "translate") if "nltk" in globals() else False
+        ):
             logger.warning("nltk not available, skipping METEOR")
             return {}
 
-        if 'nltk' in globals() and hasattr(nltk, "translate") and hasattr(nltk.translate, "meteor_score"):
+        if (
+            "nltk" in globals()
+            and hasattr(nltk, "translate")
+            and hasattr(nltk.translate, "meteor_score")
+        ):
             meteor_fn = nltk.translate.meteor_score.meteor_score
         else:
             meteor_fn = meteor_score
 
         scores = []
-        for pred, ref in zip(predictions, references):
+        for pred, ref in zip(predictions, references, strict=False):
             try:
                 pred_tokens = pred.split() if isinstance(pred, str) else pred
-                ref_list = [ref.split()] if isinstance(ref, str) else [r.split() if isinstance(r, str) else r for r in ref]
+                ref_list = (
+                    [ref.split()]
+                    if isinstance(ref, str)
+                    else [r.split() if isinstance(r, str) else r for r in ref]
+                )
                 score = meteor_fn(ref_list, pred_tokens)
                 scores.append(score)
             except Exception as e:
@@ -353,16 +396,18 @@ class MetricsCalculator:
 
         return {"meteor": float(np.mean(scores)) if scores else 0.0}
 
-    def calculate_bertscore(self, predictions: List[str], references: List[str]) -> Dict[str, float]:
+    def calculate_bertscore(
+        self, predictions: list[str], references: list[str]
+    ) -> dict[str, float]:
         """Calculate BERTScore."""
-        if not BERTSCORE_AVAILABLE and not ('bert_score' in globals() and bert_score is not None):
+        if not BERTSCORE_AVAILABLE and not ("bert_score" in globals() and bert_score is not None):
             logger.warning("bert_score not available, skipping BERTScore")
             return {}
 
         score_fn = None
-        if 'bert_score' in globals() and bert_score is not None and hasattr(bert_score, "score"):
+        if "bert_score" in globals() and bert_score is not None and hasattr(bert_score, "score"):
             score_fn = bert_score.score
-        elif 'bert_score' in globals() and callable(bert_score):
+        elif "bert_score" in globals() and callable(bert_score):
             score_fn = bert_score
         else:
             score_fn = bert_score_fn
@@ -390,35 +435,39 @@ class MetricsCalculator:
 
         result = {}
         if "precision" in self.bertscore_config.metrics:
-            result["bertscore_precision"] = float(P.mean()) if hasattr(P, 'mean') else 0.0
+            result["bertscore_precision"] = float(P.mean()) if hasattr(P, "mean") else 0.0
         if "recall" in self.bertscore_config.metrics:
-            result["bertscore_recall"] = float(R.mean()) if hasattr(R, 'mean') else 0.0
+            result["bertscore_recall"] = float(R.mean()) if hasattr(R, "mean") else 0.0
         if "f1" in self.bertscore_config.metrics:
-            result["bertscore_f1"] = float(F1.mean()) if hasattr(F1, 'mean') else 0.0
+            result["bertscore_f1"] = float(F1.mean()) if hasattr(F1, "mean") else 0.0
 
         return result
 
-    def calculate_perplexity(self, texts: List[str]) -> Dict[str, float]:
+    def calculate_perplexity(self, texts: list[str]) -> dict[str, float]:
         """Calculate perplexity."""
         if not PERPLEXITY_AVAILABLE:
             logger.warning("perplexity not available, skipping perplexity")
             return {}
 
         try:
-            perp = perplexity(
-                texts,
-                model_id=self.perplexity_config.model_id,
-                device=self.perplexity_config.device,
-                batch_size=self.perplexity_config.batch_size,
-                stride=self.perplexity_config.stride,
-                max_length=self.perplexity_config.max_length,
+            from src.metrics import MetricsCalculator as CoreMetricsCalculator
+
+            calc = CoreMetricsCalculator(
+                perplexity_model=getattr(self.perplexity_config, "model_id", "gpt2")
             )
-            return {"perplexity": float(perp)}
+            res = calc.calculate_perplexity(
+                texts,
+                stride=getattr(self.perplexity_config, "stride", 512),
+                max_length=getattr(self.perplexity_config, "max_length", 1024),
+                batch_size=getattr(self.perplexity_config, "batch_size", 8),
+            )
+            val = res.get("perplexity")
+            return {"perplexity": float(val.value) if hasattr(val, "value") else float(val or 0.0)}
         except Exception as e:
             logger.warning(f"Perplexity calculation failed: {e}")
             return {}
 
-    def calculate_distinct_n(self, texts: List[str]) -> Dict[str, float]:
+    def calculate_distinct_n(self, texts: list[str]) -> dict[str, float]:
         """Calculate distinct-n scores."""
         results = {}
 
@@ -429,7 +478,7 @@ class MetricsCalculator:
             for text in texts:
                 tokens = text.split()
                 for i in range(len(tokens) - n + 1):
-                    ngram = tuple(tokens[i:i+n])
+                    ngram = tuple(tokens[i : i + n])
                     ngrams.add(ngram)
                     total += 1
 
@@ -444,10 +493,10 @@ class MetricsCalculator:
 
     def calculate_all(
         self,
-        predictions: List[str],
-        references: List[str],
-        generation_texts: Optional[List[str]] = None,
-    ) -> Dict[str, MetricResult]:
+        predictions: list[str],
+        references: list[str],
+        generation_texts: list[str] | None = None,
+    ) -> dict[str, MetricResult]:
         """Calculate all enabled metrics."""
         metrics = {}
 
@@ -501,13 +550,13 @@ class ModelEvaluator:
 
         # Handle both real models (iterator) and mocks (list)
         params = model.parameters()
-        if hasattr(params, '__iter__') and not hasattr(params, '__next__'):
+        if hasattr(params, "__iter__") and not hasattr(params, "__next__"):
             # It's a list (mock), get first element
             first_param = params[0] if params else None
         else:
             # It's an iterator (real model)
             first_param = next(params, None)
-        
+
         self.device = first_param.device if first_param is not None else torch.device("cpu")
         self.model.eval()
 
@@ -521,15 +570,14 @@ class ModelEvaluator:
             yield
             torch.cuda.synchronize()
             mem_after = torch.cuda.max_memory_allocated()
-            mem_used = (mem_after - mem_before) / 1e6
+            (mem_after - mem_before) / 1e6
         else:
-            mem_used = 0.0
             yield
 
     def generate(
         self,
         prompt: str,
-        reference: Optional[str] = None,
+        reference: str | None = None,
     ) -> GenerationResult:
         """Generate response for a single prompt."""
         inputs = self.tokenizer(
@@ -541,7 +589,17 @@ class ModelEvaluator:
 
         try:
             raw_input_tokens = inputs.input_ids.shape[1]
-            input_tokens = int(raw_input_tokens) if hasattr(raw_input_tokens, "__int__") and not isinstance(raw_input_tokens, MagicMock) else (len(inputs.input_ids[0]) if hasattr(inputs.input_ids, "__len__") and not isinstance(inputs.input_ids, MagicMock) else 0)
+            input_tokens = (
+                int(raw_input_tokens)
+                if hasattr(raw_input_tokens, "__int__")
+                and not isinstance(raw_input_tokens, MagicMock)
+                else (
+                    len(inputs.input_ids[0])
+                    if hasattr(inputs.input_ids, "__len__")
+                    and not isinstance(inputs.input_ids, MagicMock)
+                    else 0
+                )
+            )
         except Exception:
             input_tokens = 0
 
@@ -620,8 +678,8 @@ class ModelEvaluator:
         instruction_col: str = "instruction",
         input_col: str = "input",
         output_col: str = "output",
-        max_samples: Optional[int] = None,
-    ) -> Tuple[List[GenerationResult], List[str], List[str]]:
+        max_samples: int | None = None,
+    ) -> tuple[list[GenerationResult], list[str], list[str]]:
         """Evaluate model on a dataset."""
         if max_samples and len(dataset) > max_samples:
             if hasattr(dataset, "select"):
@@ -657,7 +715,7 @@ class ModelEvaluator:
         dataset: Any,
         num_warmup: int = 3,
         num_runs: int = 10,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """Benchmark model performance (latency, throughput, memory)."""
         sample_prompts = []
         sample_range = range(min(num_warmup + num_runs, len(dataset)))
@@ -668,7 +726,9 @@ class ModelEvaluator:
         for example in samples:
             instruction = example.get("instruction", "")
             input_text = example.get("input", "")
-            sample_prompts.append(self.prompt_formatter.format(instruction=instruction, input_text=input_text))
+            sample_prompts.append(
+                self.prompt_formatter.format(instruction=instruction, input_text=input_text)
+            )
 
         latencies = []
         token_counts = []
@@ -706,12 +766,25 @@ class ModelEvaluator:
             latencies.append(elapsed)
             if hasattr(outputs, "shape") and not isinstance(outputs, MagicMock):
                 num_tokens = int(outputs.shape[1])
-            elif isinstance(outputs, list) and len(outputs) > 0 and not isinstance(outputs, MagicMock):
-                num_tokens = len(outputs[0]) if isinstance(outputs[0], (list, tuple)) and not isinstance(outputs[0], MagicMock) else 5
+            elif (
+                isinstance(outputs, list)
+                and len(outputs) > 0
+                and not isinstance(outputs, MagicMock)
+            ):
+                num_tokens = (
+                    len(outputs[0])
+                    if isinstance(outputs[0], (list, tuple))
+                    and not isinstance(outputs[0], MagicMock)
+                    else 5
+                )
             else:
                 num_tokens = 5
 
-            if hasattr(inputs, "input_ids") and hasattr(inputs.input_ids, "shape") and not isinstance(inputs.input_ids, MagicMock):
+            if (
+                hasattr(inputs, "input_ids")
+                and hasattr(inputs.input_ids, "shape")
+                and not isinstance(inputs.input_ids, MagicMock)
+            ):
                 in_len = int(inputs.input_ids.shape[1])
             else:
                 in_len = 3
@@ -735,7 +808,7 @@ def load_finetuned_model(
     base_model_path: str,
     adapter_path: str,
     device_map: str = "auto",
-) -> Tuple[PreTrainedModel, PreTrainedTokenizer]:
+) -> tuple[PreTrainedModel, PreTrainedTokenizer]:
     """Load base model with fine-tuned PEFT adapter."""
     logger.info(f"Loading base model from {base_model_path} with adapter {adapter_path}")
     base_model, tokenizer = load_base_model(base_model_path, device_map=device_map)
@@ -747,7 +820,7 @@ def load_finetuned_model(
 def load_base_model(
     base_model_path: str,
     device_map: str = "auto",
-) -> Tuple[PreTrainedModel, PreTrainedTokenizer]:
+) -> tuple[PreTrainedModel, PreTrainedTokenizer]:
     """Load base model and tokenizer."""
     logger.info(f"Loading base model: {base_model_path}")
     model = AutoModelForCausalLM.from_pretrained(
@@ -771,10 +844,10 @@ def load_base_model(
 def run_evaluation(
     eval_config: Any,
     base_model_path: str,
-    finetuned_model_path: Optional[str] = None,
-    adapter_path: Optional[str] = None,
+    finetuned_model_path: str | None = None,
+    adapter_path: str | None = None,
     output_dir: str = "./evaluation_results",
-) -> Dict[str, EvaluationReport]:
+) -> dict[str, EvaluationReport]:
     """Run complete evaluation pipeline."""
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -792,7 +865,7 @@ def run_evaluation(
             return val
         elif isinstance(val, dict):
             return cfg_cls(**val)
-        elif val is not None and hasattr(val, '__dict__'):
+        elif val is not None and hasattr(val, "__dict__"):
             return val
         return cfg_cls()
 
@@ -888,7 +961,7 @@ def run_evaluation(
     return reports
 
 
-def generate_comparison_table(reports: Dict[str, EvaluationReport]) -> str:
+def generate_comparison_table(reports: dict[str, EvaluationReport]) -> str:
     """Generate markdown comparison table."""
     lines = ["# Model Comparison Report\n"]
 
@@ -898,7 +971,7 @@ def generate_comparison_table(reports: Dict[str, EvaluationReport]) -> str:
 
     sorted_metrics = sorted(metric_names)
 
-    for ds_name in set(r.dataset_name for r in reports.values()):
+    for ds_name in {r.dataset_name for r in reports.values()}:
         ds_reports = {k: v for k, v in reports.items() if v.dataset_name == ds_name}
 
         lines.append(f"\n## Dataset: {ds_name}\n")
@@ -915,7 +988,12 @@ def generate_comparison_table(reports: Dict[str, EvaluationReport]) -> str:
             lines.append("| " + " | ".join(row) + " |")
 
         lines.append("\n### Performance\n")
-        perf_metrics = ["avg_latency_ms", "avg_throughput_tokens_per_sec", "avg_memory_mb", "peak_memory_mb"]
+        perf_metrics = [
+            "avg_latency_ms",
+            "avg_throughput_tokens_per_sec",
+            "avg_memory_mb",
+            "peak_memory_mb",
+        ]
         lines.append("| Metric | " + " | ".join(ds_reports.keys()) + " |")
         lines.append("|" + "---|" * (len(ds_reports) + 1))
         for metric in perf_metrics:
@@ -931,9 +1009,9 @@ def generate_comparison_table(reports: Dict[str, EvaluationReport]) -> str:
 
 
 def save_reports(
-    reports: Dict[str, EvaluationReport],
+    reports: dict[str, EvaluationReport],
     output_dir: str,
-    formats: List[str] = None,
+    formats: list[str] = None,
 ):
     """Save evaluation reports in multiple formats."""
     output_path = Path(output_dir)
@@ -961,14 +1039,19 @@ def save_reports(
     if "csv" in formats:
         csv_path = output_path / "metrics_summary.csv"
         import csv
+
         with open(csv_path, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(["model", "dataset", "metric", "value"])
             for report in reports.values():
                 for metric_name, metric in report.metrics.items():
-                    writer.writerow([report.model_name, report.dataset_name, metric_name, metric.value])
+                    writer.writerow(
+                        [report.model_name, report.dataset_name, metric_name, metric.value]
+                    )
                 for perf_name, perf_value in report.performance.items():
-                    writer.writerow([report.model_name, report.dataset_name, f"perf_{perf_name}", perf_value])
+                    writer.writerow(
+                        [report.model_name, report.dataset_name, f"perf_{perf_name}", perf_value]
+                    )
         logger.info(f"Saved CSV report: {csv_path}")
 
 
@@ -980,7 +1063,8 @@ def create_argument_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--config", "-c",
+        "--config",
+        "-c",
         type=str,
         default="configs",
         help="Config directory path",
@@ -1008,7 +1092,8 @@ def create_argument_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--output-dir", "-o",
+        "--output-dir",
+        "-o",
         type=str,
         default="./evaluation_results",
         help="Output directory",
@@ -1063,7 +1148,8 @@ def create_argument_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="Verbose logging",
     )
@@ -1116,8 +1202,7 @@ def main():
     logger.info("Evaluation completed!")
 
     # Print summary
-    table = generate_comparison_table(reports)
-    print("\n" + table)
+    generate_comparison_table(reports)
 
 
 if __name__ == "__main__":

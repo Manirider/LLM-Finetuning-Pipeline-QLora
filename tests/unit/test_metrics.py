@@ -1,14 +1,9 @@
 """Unit tests for src/metrics.py."""
 
-from unittest.mock import MagicMock, patch
-
-import pytest
-
 from src.metrics import (
     MetricResult,
     MetricsCalculator,
     compute_bleu,
-    compute_meteor,
     compute_rouge,
 )
 

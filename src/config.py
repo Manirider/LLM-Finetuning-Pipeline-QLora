@@ -9,19 +9,19 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
-
 
 # =============================================================================
 # TRAINING CONFIGURATION MODELS
 # =============================================================================
 
+
 class TrainerConfig(BaseModel):
     """Hugging Face Trainer / SFTTrainer configuration."""
+
     output_dir: str = "./checkpoints"
     overwrite_output_dir: bool = True
     save_strategy: str = "steps"
@@ -39,7 +39,9 @@ class TrainerConfig(BaseModel):
     per_device_eval_batch_size: int = 4
     gradient_accumulation_steps: int = 4
     gradient_checkpointing: bool = True
-    gradient_checkpointing_kwargs: Dict[str, Any] = Field(default_factory=lambda: {"use_reentrant": False})
+    gradient_checkpointing_kwargs: dict[str, Any] = Field(
+        default_factory=lambda: {"use_reentrant": False}
+    )
 
     learning_rate: float = 2.0e-4
     weight_decay: float = 0.01
@@ -48,12 +50,12 @@ class TrainerConfig(BaseModel):
     adam_epsilon: float = 1.0e-8
     max_grad_norm: float = 1.0
     optim: str = "adamw_torch"
-    optim_args: Optional[Dict[str, Any]] = None
+    optim_args: dict[str, Any] | None = None
 
     lr_scheduler_type: str = "cosine"
     warmup_ratio: float = 0.03
     warmup_steps: int = 0
-    lr_scheduler_kwargs: Dict[str, Any] = Field(default_factory=dict)
+    lr_scheduler_kwargs: dict[str, Any] = Field(default_factory=dict)
 
     fp16: bool = False
     bf16: bool = True
@@ -69,7 +71,7 @@ class TrainerConfig(BaseModel):
     log_level_replica: str = "warning"
     log_on_each_node: bool = False
     disable_tqdm: bool = False
-    report_to: List[str] = Field(default_factory=lambda: ["tensorboard", "wandb"])
+    report_to: list[str] = Field(default_factory=lambda: ["tensorboard", "wandb"])
     run_name: str = "llm-finetuning-qlora"
 
     evaluation_strategy: str = "steps"
@@ -84,7 +86,7 @@ class TrainerConfig(BaseModel):
     dataloader_persistent_workers: bool = True
     dataloader_prefetch_factor: int = 2
     remove_unused_columns: bool = False
-    label_names: List[str] = Field(default_factory=lambda: ["labels"])
+    label_names: list[str] = Field(default_factory=lambda: ["labels"])
     data_seed: int = 42
 
     ddp_backend: str = "nccl"
@@ -108,17 +110,17 @@ class TrainerConfig(BaseModel):
     hub_private_repo: bool = False
     hub_always_push: bool = False
 
-    resume_from_checkpoint: Optional[str] = None
+    resume_from_checkpoint: str | None = None
     ignore_data_skip: bool = False
 
     fsdp: str = ""
-    fsdp_config: Optional[Dict[str, Any]] = None
-    deepspeed: Optional[Union[str, Dict[str, Any]]] = None
+    fsdp_config: dict[str, Any] | None = None
+    deepspeed: str | dict[str, Any] | None = None
 
     group_by_length: bool = False
     length_column_name: str = "length"
     include_inputs_for_metrics: bool = False
-    include_for_metrics: List[str] = Field(default_factory=list)
+    include_for_metrics: list[str] = Field(default_factory=list)
     eval_do_concat_batches: bool = True
     skip_memory_metrics: bool = False
     use_legacy_prediction_loop: bool = False
@@ -130,32 +132,40 @@ class TrainerConfig(BaseModel):
 
 class LoRAConfig(BaseModel):
     """LoRA / PEFT configuration."""
+
     r: int = 64
     lora_alpha: int = 16
     lora_dropout: float = 0.05
     use_rslora: bool = True
     use_dora: bool = False
-    init_lora_weights: Union[bool, str] = "gaussian"
+    init_lora_weights: bool | str = "gaussian"
 
-    target_modules: List[str] = Field(default_factory=lambda: [
-        "q_proj", "k_proj", "v_proj", "o_proj",
-        "gate_proj", "up_proj", "down_proj"
-    ])
+    target_modules: list[str] = Field(
+        default_factory=lambda: [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+        ]
+    )
 
     bias: str = "none"
     task_type: str = "CAUSAL_LM"
     inference_mode: bool = False
 
-    layers_to_transform: Optional[List[int]] = None
-    layers_pattern: Optional[str] = None
-    rank_pattern: Dict[str, int] = Field(default_factory=dict)
-    alpha_pattern: Dict[str, int] = Field(default_factory=dict)
+    layers_to_transform: list[int] | None = None
+    layers_pattern: str | None = None
+    rank_pattern: dict[str, int] = Field(default_factory=dict)
+    alpha_pattern: dict[str, int] = Field(default_factory=dict)
 
-    megatron_config: Optional[Any] = None
+    megatron_config: Any | None = None
     megatron_core: bool = False
 
-    lora_plus_scale: Optional[float] = None
-    lora_plus_lr_ratio: Optional[float] = None
+    lora_plus_scale: float | None = None
+    lora_plus_lr_ratio: float | None = None
 
     @field_validator("bias")
     @classmethod
@@ -167,7 +177,7 @@ class LoRAConfig(BaseModel):
 
     @field_validator("init_lora_weights")
     @classmethod
-    def validate_init_weights(cls, v: Union[bool, str]) -> Union[bool, str]:
+    def validate_init_weights(cls, v: bool | str) -> bool | str:
         if isinstance(v, str):
             allowed = ["gaussian", "loftq", "pissa", "olora", "true", "false"]
             if v not in allowed:
@@ -177,6 +187,7 @@ class LoRAConfig(BaseModel):
 
 class QuantizationConfig(BaseModel):
     """BitsAndBytes quantization configuration."""
+
     load_in_4bit: bool = True
     bnb_4bit_quant_type: str = "nf4"
     bnb_4bit_compute_dtype: str = "bfloat16"
@@ -186,7 +197,7 @@ class QuantizationConfig(BaseModel):
     load_in_8bit: bool = False
     llm_int8_threshold: float = 6.0
     llm_int8_has_fp16_weight: bool = False
-    llm_int8_skip_modules: List[str] = Field(default_factory=list)
+    llm_int8_skip_modules: list[str] = Field(default_factory=list)
     llm_int8_enable_fp32_cpu_offload: bool = False
 
     quantization_config_class: str = "BitsAndBytesConfig"
@@ -209,51 +220,57 @@ class QuantizationConfig(BaseModel):
 
 class SFTConfig(BaseModel):
     """TRL SFTTrainer configuration."""
+
     max_seq_length: int = 2048
     packing: bool = False
-    packing_fn: Optional[Any] = None
+    packing_fn: Any | None = None
     dataset_text_field: str = "text"
-    dataset_kwargs: Dict[str, Any] = Field(default_factory=dict)
-    formatting_func: Optional[Any] = None
-    neftune_noise_alpha: Optional[float] = None
+    dataset_kwargs: dict[str, Any] = Field(default_factory=dict)
+    formatting_func: Any | None = None
+    neftune_noise_alpha: float | None = None
 
     dataset_num_proc: int = 4
     dataset_batch_size: int = 1000
     remove_unused_columns: bool = True
     shuffle_buffer_size: int = 10000
 
-    tokenizer_kwargs: Dict[str, Any] = Field(default_factory=lambda: {
-        "padding": "max_length",
-        "truncation": True,
-        "max_length": 2048,
-        "return_tensors": "pt"
-    })
+    tokenizer_kwargs: dict[str, Any] = Field(
+        default_factory=lambda: {
+            "padding": "max_length",
+            "truncation": True,
+            "max_length": 2048,
+            "return_tensors": "pt",
+        }
+    )
 
 
 class OptimizerConfig(BaseModel):
     """Optimizer configuration."""
+
     type: str = "adamw_torch"
-    kwargs: Dict[str, Any] = Field(default_factory=lambda: {
-        "betas": [0.9, 0.999],
-        "eps": 1.0e-8,
-        "weight_decay": 0.01,
-        "foreach": True,
-        "fused": True
-    })
+    kwargs: dict[str, Any] = Field(
+        default_factory=lambda: {
+            "betas": [0.9, 0.999],
+            "eps": 1.0e-8,
+            "weight_decay": 0.01,
+            "foreach": True,
+            "fused": True,
+        }
+    )
 
 
 class SchedulerConfig(BaseModel):
     """Learning rate scheduler configuration."""
+
     type: str = "cosine"
-    kwargs: Dict[str, Any] = Field(default_factory=lambda: {
-        "num_warmup_steps": 0,
-        "num_cycles": 0.5,
-        "last_epoch": -1
-    })
+    kwargs: dict[str, Any] = Field(
+        default_factory=lambda: {"num_warmup_steps": 0, "num_cycles": 0.5, "last_epoch": -1}
+    )
 
 
 class EarlyStoppingConfig(BaseModel):
     """Early stopping callback configuration."""
+
     enabled: bool = True
     patience: int = 3
     threshold: float = 0.001
@@ -263,6 +280,7 @@ class EarlyStoppingConfig(BaseModel):
 
 class CheckpointConfig(BaseModel):
     """Checkpoint callback configuration."""
+
     enabled: bool = True
     save_steps: int = 100
     save_total_limit: int = 3
@@ -272,6 +290,7 @@ class CheckpointConfig(BaseModel):
 
 class LoggingCallbackConfig(BaseModel):
     """Logging callback configuration."""
+
     enabled: bool = True
     log_steps: int = 10
     log_gpu_memory: bool = True
@@ -281,28 +300,31 @@ class LoggingCallbackConfig(BaseModel):
 
 class ProfilerConfig(BaseModel):
     """Profiler callback configuration."""
+
     enabled: bool = False
     profile_steps: int = 10
     profile_dir: str = "./logs/profiler"
-    activities: List[str] = Field(default_factory=lambda: ["cpu", "cuda"])
+    activities: list[str] = Field(default_factory=lambda: ["cpu", "cuda"])
     record_shapes: bool = True
     with_stack: bool = True
 
 
 class CallbacksConfig(BaseModel):
     """All callbacks configuration."""
+
     early_stopping: EarlyStoppingConfig = Field(default_factory=EarlyStoppingConfig)
     checkpoint: CheckpointConfig = Field(default_factory=CheckpointConfig)
     logging: LoggingCallbackConfig = Field(default_factory=LoggingCallbackConfig)
     profiler: ProfilerConfig = Field(default_factory=ProfilerConfig)
-    custom_callbacks: List[Any] = Field(default_factory=list)
+    custom_callbacks: list[Any] = Field(default_factory=list)
 
 
 class RuntimeConfig(BaseModel):
     """Runtime configuration."""
+
     device: str = "auto"
     device_map: str = "auto"
-    max_memory: Optional[Dict[str, str]] = None
+    max_memory: dict[str, str] | None = None
     low_cpu_mem_usage: bool = True
 
     local_rank: int = -1
@@ -323,16 +345,18 @@ class RuntimeConfig(BaseModel):
 
 class ExperimentConfig(BaseModel):
     """Experiment tracking configuration."""
+
     name: str = "llm-finetuning-qlora"
     project: str = "llm-finetuning"
-    entity: Optional[str] = None
-    tags: List[str] = Field(default_factory=lambda: ["qlora", "nf4", "llama3"])
+    entity: str | None = None
+    tags: list[str] = Field(default_factory=lambda: ["qlora", "nf4", "llama3"])
     notes: str = ""
-    config_override: Dict[str, Any] = Field(default_factory=dict)
+    config_override: dict[str, Any] = Field(default_factory=dict)
 
 
 class TrainingConfig(BaseModel):
     """Complete training configuration."""
+
     trainer: TrainerConfig = Field(default_factory=TrainerConfig)
     lora: LoRAConfig = Field(default_factory=LoRAConfig)
     quantization: QuantizationConfig = Field(default_factory=QuantizationConfig)
@@ -348,8 +372,10 @@ class TrainingConfig(BaseModel):
 # MODEL CONFIGURATION MODELS
 # =============================================================================
 
+
 class ModelArchitectureConfig(BaseModel):
     """Model architecture configuration."""
+
     model_type: str = "llama"
     architecture: str = "LlamaForCausalLM"
     config_class: str = "LlamaConfig"
@@ -361,9 +387,9 @@ class ModelArchitectureConfig(BaseModel):
     max_position_embeddings: int = 8192
     rms_norm_eps: float = 1.0e-5
     rope_theta: float = 500000.0
-    rope_scaling: Optional[Dict[str, Any]] = None
+    rope_scaling: dict[str, Any] | None = None
     vocab_size: int = 128256
-    pad_token_id: Optional[int] = None
+    pad_token_id: int | None = None
     bos_token_id: int = 128000
     eos_token_id: int = 128001
     tie_word_embeddings: bool = False
@@ -371,23 +397,24 @@ class ModelArchitectureConfig(BaseModel):
 
 class ModelConfig(BaseModel):
     """Base model configuration."""
+
     model_name_or_path: str = "meta-llama/Meta-Llama-3-8B-Instruct"
     model_revision: str = "main"
-    model_cache_dir: Optional[str] = None
+    model_cache_dir: str | None = None
     trust_remote_code: bool = False
     use_auth_token: bool = True
 
-    architecture: Union[ModelArchitectureConfig, str] = Field(default_factory=ModelArchitectureConfig)
+    architecture: ModelArchitectureConfig | str = Field(default_factory=ModelArchitectureConfig)
 
     torch_dtype: str = "bfloat16"
     device_map: str = "auto"
-    max_memory: Optional[Dict[str, str]] = None
+    max_memory: dict[str, str] | None = None
     offload_folder: str = "./offload"
     offload_state_dict: bool = False
     offload_buffers: bool = False
     low_cpu_mem_usage: bool = True
     use_safetensors: bool = True
-    variant: Optional[str] = None
+    variant: str | None = None
 
     attn_implementation: str = "flash_attention_2"
     use_flash_attention_2: bool = True
@@ -395,17 +422,19 @@ class ModelConfig(BaseModel):
     _attn_implementation: str = "flash_attention_2"
 
     gradient_checkpointing: bool = True
-    gradient_checkpointing_kwargs: Dict[str, Any] = Field(default_factory=lambda: {"use_reentrant": False})
+    gradient_checkpointing_kwargs: dict[str, Any] = Field(
+        default_factory=lambda: {"use_reentrant": False}
+    )
 
     use_cache: bool = False
 
-    quantization_config: Optional[Any] = None
+    quantization_config: Any | None = None
     load_in_8bit: bool = False
     load_in_4bit: bool = True
 
     @field_validator("architecture", mode="before")
     @classmethod
-    def parse_architecture(cls, v: Union[Dict[str, Any], str]) -> ModelArchitectureConfig:
+    def parse_architecture(cls, v: dict[str, Any] | str) -> ModelArchitectureConfig:
         if isinstance(v, str):
             return ModelArchitectureConfig(architecture=v)
         return v
@@ -413,9 +442,10 @@ class ModelConfig(BaseModel):
 
 class TokenizerConfig(BaseModel):
     """Tokenizer configuration."""
-    tokenizer_name_or_path: Optional[str] = None
+
+    tokenizer_name_or_path: str | None = None
     tokenizer_revision: str = "main"
-    tokenizer_cache_dir: Optional[str] = None
+    tokenizer_cache_dir: str | None = None
     use_auth_token: bool = True
 
     use_fast: bool = True
@@ -423,24 +453,26 @@ class TokenizerConfig(BaseModel):
     truncation_side: str = "right"
     model_max_length: int = 4096
 
-    pad_token: Optional[str] = None
-    eos_token: Optional[str] = None
-    bos_token: Optional[str] = None
-    unk_token: Optional[str] = None
-    sep_token: Optional[str] = None
-    cls_token: Optional[str] = None
-    mask_token: Optional[str] = None
+    pad_token: str | None = None
+    eos_token: str | None = None
+    bos_token: str | None = None
+    unk_token: str | None = None
+    sep_token: str | None = None
+    cls_token: str | None = None
+    mask_token: str | None = None
 
-    additional_special_tokens: List[str] = Field(default_factory=list)
+    additional_special_tokens: list[str] = Field(default_factory=list)
 
-    chat_template: Optional[str] = None
+    chat_template: str | None = None
     chat_template_name: str = "llama3"
 
-    tokenizer_kwargs: Dict[str, Any] = Field(default_factory=lambda: {
-        "clean_up_tokenization_spaces": True,
-        "add_special_tokens": True,
-        "return_token_type_ids": False
-    })
+    tokenizer_kwargs: dict[str, Any] = Field(
+        default_factory=lambda: {
+            "clean_up_tokenization_spaces": True,
+            "add_special_tokens": True,
+            "return_token_type_ids": False,
+        }
+    )
 
     @field_validator("padding_side")
     @classmethod
@@ -459,36 +491,45 @@ class TokenizerConfig(BaseModel):
 
 class PEFTLoraConfig(BaseModel):
     """PEFT LoRA configuration."""
+
     r: int = 64
     lora_alpha: int = 16
     lora_dropout: float = 0.05
     use_rslora: bool = True
     use_dora: bool = False
-    init_lora_weights: Union[bool, str] = "gaussian"
+    init_lora_weights: bool | str = "gaussian"
 
-    target_modules: List[str] = Field(default_factory=lambda: [
-        "q_proj", "k_proj", "v_proj", "o_proj",
-        "gate_proj", "up_proj", "down_proj"
-    ])
+    target_modules: list[str] = Field(
+        default_factory=lambda: [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+        ]
+    )
 
     bias: str = "none"
     task_type: str = "CAUSAL_LM"
     inference_mode: bool = False
 
-    layers_to_transform: Optional[List[int]] = None
-    layers_pattern: Optional[str] = None
-    rank_pattern: Dict[str, int] = Field(default_factory=dict)
-    alpha_pattern: Dict[str, int] = Field(default_factory=dict)
+    layers_to_transform: list[int] | None = None
+    layers_pattern: str | None = None
+    rank_pattern: dict[str, int] = Field(default_factory=dict)
+    alpha_pattern: dict[str, int] = Field(default_factory=dict)
 
-    megatron_config: Optional[Any] = None
+    megatron_config: Any | None = None
     megatron_core: bool = False
 
-    lora_plus_scale: Optional[float] = None
-    lora_plus_lr_ratio: Optional[float] = None
+    lora_plus_scale: float | None = None
+    lora_plus_lr_ratio: float | None = None
 
 
 class AdaLoRAConfig(BaseModel):
     """AdaLoRA configuration."""
+
     target_r: int = 8
     init_r: int = 12
     tinit: int = 0
@@ -497,21 +538,23 @@ class AdaLoRAConfig(BaseModel):
     beta1: float = 0.85
     beta2: float = 0.85
     orth_reg_weight: float = 0.5
-    total_step: Optional[int] = None
-    rank_pattern: Dict[str, int] = Field(default_factory=dict)
-    alpha_pattern: Dict[str, int] = Field(default_factory=dict)
+    total_step: int | None = None
+    rank_pattern: dict[str, int] = Field(default_factory=dict)
+    alpha_pattern: dict[str, int] = Field(default_factory=dict)
 
 
 class IA3Config(BaseModel):
     """IA3 configuration."""
-    target_modules: List[str] = Field(default_factory=list)
-    feedforward_modules: List[str] = Field(default_factory=list)
+
+    target_modules: list[str] = Field(default_factory=list)
+    feedforward_modules: list[str] = Field(default_factory=list)
     fan_in_fan_out: bool = False
     init_ia3_weights: bool = True
 
 
 class PEFTConfig(BaseModel):
     """PEFT configuration."""
+
     peft_type: str = "LORA"
     lora: PEFTLoraConfig = Field(default_factory=PEFTLoraConfig)
     adalora: AdaLoRAConfig = Field(default_factory=AdaLoRAConfig)
@@ -528,6 +571,7 @@ class PEFTConfig(BaseModel):
 
 class QuantizationConfigModel(BaseModel):
     """Quantization configuration for model loading."""
+
     load_in_4bit: bool = True
     bnb_4bit_quant_type: str = "nf4"
     bnb_4bit_compute_dtype: str = "bfloat16"
@@ -537,7 +581,7 @@ class QuantizationConfigModel(BaseModel):
     load_in_8bit: bool = False
     llm_int8_threshold: float = 6.0
     llm_int8_has_fp16_weight: bool = False
-    llm_int8_skip_modules: List[str] = Field(default_factory=list)
+    llm_int8_skip_modules: list[str] = Field(default_factory=list)
     llm_int8_enable_fp32_cpu_offload: bool = False
 
     quantization_config_class: str = "BitsAndBytesConfig"
@@ -546,25 +590,26 @@ class QuantizationConfigModel(BaseModel):
 
 class ModelLoadingConfig(BaseModel):
     """Model loading options."""
+
     revision: str = "main"
-    token: Optional[str] = None
+    token: str | None = None
     use_auth_token: bool = True
 
-    cache_dir: Optional[str] = None
+    cache_dir: str | None = None
     force_download: bool = False
-    resume_download: Optional[bool] = None
-    proxies: Optional[Dict[str, str]] = None
+    resume_download: bool | None = None
+    proxies: dict[str, str] | None = None
     local_files_only: bool = False
 
     offload_folder: str = "./offload"
     offload_state_dict: bool = False
     offload_buffers: bool = False
 
-    max_memory: Optional[Dict[str, str]] = None
+    max_memory: dict[str, str] | None = None
     low_cpu_mem_usage: bool = True
 
     use_safetensors: bool = True
-    variant: Optional[str] = None
+    variant: str | None = None
 
     torch_dtype: str = "bfloat16"
     device_map: str = "auto"
@@ -577,12 +622,13 @@ class ModelLoadingConfig(BaseModel):
     load_in_8bit: bool = False
     load_in_4bit: bool = True
 
-    peft_config: Optional[Any] = None
+    peft_config: Any | None = None
     is_trainable: bool = True
 
 
 class ModelSavingConfig(BaseModel):
     """Model saving configuration."""
+
     save_adapter: bool = True
     adapter_path: str = "./adapters/best"
     save_tokenizer: bool = True
@@ -596,12 +642,13 @@ class ModelSavingConfig(BaseModel):
     push_to_hub: bool = False
     hub_model_id: str = ""
     hub_private_repo: bool = False
-    hub_token: Optional[str] = None
+    hub_token: str | None = None
     commit_message: str = "Upload model"
 
 
 class InferenceConfig(BaseModel):
     """Inference configuration."""
+
     max_new_tokens: int = 512
     min_new_tokens: int = 1
     do_sample: bool = True
@@ -630,26 +677,28 @@ class InferenceConfig(BaseModel):
 
     batch_size: int = 4
     max_batch_size: int = 32
-    pad_token_id: Optional[int] = None
-    eos_token_id: Optional[int] = None
+    pad_token_id: int | None = None
+    eos_token_id: int | None = None
     use_flash_attention_2: bool = True
 
     stream: bool = False
-    stream_options: Optional[Dict[str, Any]] = None
+    stream_options: dict[str, Any] | None = None
 
 
 class ModelPresetConfig(BaseModel):
     """Model preset configuration."""
+
     model_name_or_path: str
-    tokenizer_name_or_path: Optional[str] = None
+    tokenizer_name_or_path: str | None = None
     torch_dtype: str = "bfloat16"
     attn_implementation: str = "flash_attention_2"
-    target_modules: List[str]
+    target_modules: list[str]
     chat_template_name: str
 
 
 class ModelConfigComplete(BaseModel):
     """Complete model configuration."""
+
     model: ModelConfig = Field(default_factory=ModelConfig)
     tokenizer: TokenizerConfig = Field(default_factory=TokenizerConfig)
     peft: PEFTConfig = Field(default_factory=PEFTConfig)
@@ -657,30 +706,33 @@ class ModelConfigComplete(BaseModel):
     loading: ModelLoadingConfig = Field(default_factory=ModelLoadingConfig)
     saving: ModelSavingConfig = Field(default_factory=ModelSavingConfig)
     inference: InferenceConfig = Field(default_factory=InferenceConfig)
-    model_presets: Dict[str, ModelPresetConfig] = Field(default_factory=dict)
+    model_presets: dict[str, ModelPresetConfig] = Field(default_factory=dict)
 
 
 # =============================================================================
 # DATA CONFIGURATION MODELS
 # =============================================================================
 
+
 class ColumnMappingConfig(BaseModel):
     """Dataset column mapping."""
+
     instruction: str = "instruction"
     input: str = "input"
     output: str = "output"
-    text: Optional[str] = None
+    text: str | None = None
 
 
 class DatasetConfig(BaseModel):
     """Single dataset configuration."""
+
     name: str
     path: str
-    config_name: Optional[str] = None
-    data_files: Optional[Union[str, Dict[str, str]]] = None
+    config_name: str | None = None
+    data_files: str | dict[str, str] | None = None
     split: str = "train"
     streaming: bool = False
-    max_samples: Optional[int] = None
+    max_samples: int | None = None
     column_mapping: ColumnMappingConfig = Field(default_factory=ColumnMappingConfig)
     weight: float = 1.0
     is_eval: bool = False
@@ -690,18 +742,20 @@ class DatasetConfig(BaseModel):
 
 class PromptTemplateConfig(BaseModel):
     """Prompt template configuration."""
+
     template: str
-    template_with_input: Optional[str] = None
+    template_with_input: str | None = None
     system_message: str = "You are a helpful assistant."
-    instruction_key: Optional[str] = "instruction"
-    input_key: Optional[str] = "input"
-    output_key: Optional[str] = "output"
-    text_key: Optional[str] = "text"
+    instruction_key: str | None = "instruction"
+    input_key: str | None = "input"
+    output_key: str | None = "output"
+    text_key: str | None = "text"
     add_eos_token: bool = True
 
 
 class DataDownloadConfig(BaseModel):
     """Data download configuration."""
+
     cache_dir: str = "./data/raw"
     force_redownload: bool = False
     resume_download: bool = True
@@ -711,8 +765,9 @@ class DataDownloadConfig(BaseModel):
 
 class DataValidationConfig(BaseModel):
     """Data validation configuration."""
+
     enabled: bool = True
-    required_columns: List[str] = Field(default_factory=lambda: ["instruction", "output"])
+    required_columns: list[str] = Field(default_factory=lambda: ["instruction", "output"])
     min_instruction_length: int = 10
     max_instruction_length: int = 8192
     min_output_length: int = 5
@@ -720,25 +775,27 @@ class DataValidationConfig(BaseModel):
     drop_nulls: bool = True
     drop_empty_strings: bool = True
     check_duplicates: bool = True
-    duplicate_subset: List[str] = Field(default_factory=lambda: ["instruction", "input", "output"])
+    duplicate_subset: list[str] = Field(default_factory=lambda: ["instruction", "input", "output"])
     detect_language: bool = False
     expected_language: str = "en"
 
 
 class DataCleaningConfig(BaseModel):
     """Data cleaning configuration."""
+
     enabled: bool = True
     remove_duplicates: bool = True
-    duplicate_subset: List[str] = Field(default_factory=lambda: ["instruction", "input", "output"])
+    duplicate_subset: list[str] = Field(default_factory=lambda: ["instruction", "input", "output"])
     remove_nulls: bool = True
     strip_whitespace: bool = True
     remove_html: bool = False
     normalize_unicode: bool = True
-    custom_cleaners: List[str] = Field(default_factory=list)
+    custom_cleaners: list[str] = Field(default_factory=list)
 
 
 class DataFormattingConfig(BaseModel):
     """Data formatting configuration."""
+
     enabled: bool = True
     template: str = "alpaca"
     system_message: str = "You are a helpful assistant."
@@ -750,6 +807,7 @@ class DataFormattingConfig(BaseModel):
 
 class TokenizationConfig(BaseModel):
     """Tokenization configuration."""
+
     enabled: bool = True
     max_seq_length: int = 2048
     truncation: bool = True
@@ -767,30 +825,30 @@ class TokenizationConfig(BaseModel):
 
 class StatisticsConfig(BaseModel):
     """Statistics configuration."""
+
     enabled: bool = True
-    sample_size: Optional[int] = 10000
-    percentiles: List[int] = Field(default_factory=lambda: [0, 25, 50, 75, 90, 95, 99, 100])
+    sample_size: int | None = 10000
+    percentiles: list[int] = Field(default_factory=lambda: [0, 25, 50, 75, 90, 95, 99, 100])
     save_path: str = "./data/processed/statistics.json"
 
 
 class SplittingConfig(BaseModel):
     """Dataset splitting configuration."""
+
     enabled: bool = True
-    ratios: Dict[str, float] = Field(default_factory=lambda: {
-        "train": 0.90,
-        "validation": 0.05,
-        "test": 0.05
-    })
+    ratios: dict[str, float] = Field(
+        default_factory=lambda: {"train": 0.90, "validation": 0.05, "test": 0.05}
+    )
     seed: int = 42
     shuffle: bool = True
-    stratify_by: Optional[str] = None
+    stratify_by: str | None = None
     min_train_samples: int = 100
     min_val_samples: int = 10
     min_test_samples: int = 10
     method: str = "random"
 
     @model_validator(mode="after")
-    def validate_ratios(self) -> "SplittingConfig":
+    def validate_ratios(self) -> SplittingConfig:
         total = sum(self.ratios.values())
         if abs(total - 1.0) > 1e-6:
             raise ValueError(f"Split ratios must sum to 1.0, got {total}")
@@ -799,66 +857,79 @@ class SplittingConfig(BaseModel):
 
 class OutputConfig(BaseModel):
     """Output configuration."""
+
     output_dir: str = "./data/processed"
-    formats: List[str] = Field(default_factory=lambda: ["arrow", "jsonl"])
+    formats: list[str] = Field(default_factory=lambda: ["arrow", "jsonl"])
     save_splits: bool = True
-    filenames: Dict[str, str] = Field(default_factory=lambda: {
-        "train": "train.arrow",
-        "validation": "val.arrow",
-        "test": "test.arrow"
-    })
+    filenames: dict[str, str] = Field(
+        default_factory=lambda: {
+            "train": "train.arrow",
+            "validation": "val.arrow",
+            "test": "test.arrow",
+        }
+    )
     save_statistics: bool = True
     stats_filename: str = "dataset_statistics.json"
     save_tokenizer: bool = False
     tokenizer_dir: str = "./data/processed/tokenizer"
-    compression: Optional[str] = "lz4"
+    compression: str | None = "lz4"
     overwrite: bool = True
 
 
 class DataLoaderConfig(BaseModel):
     """DataLoader configuration."""
-    train: Dict[str, Any] = Field(default_factory=lambda: {
-        "batch_size": 4,
-        "gradient_accumulation_steps": 4,
-        "shuffle": True,
-        "num_workers": 4,
-        "pin_memory": True,
-        "drop_last": False,
-        "persistent_workers": True,
-        "prefetch_factor": 2,
-        "timeout": 0
-    })
-    eval: Dict[str, Any] = Field(default_factory=lambda: {
-        "batch_size": 4,
-        "shuffle": False,
-        "num_workers": 4,
-        "pin_memory": True,
-        "drop_last": False,
-        "persistent_workers": True,
-        "prefetch_factor": 2
-    })
-    test: Dict[str, Any] = Field(default_factory=lambda: {
-        "batch_size": 4,
-        "shuffle": False,
-        "num_workers": 4,
-        "pin_memory": True
-    })
-    collator: Dict[str, Any] = Field(default_factory=lambda: {
-        "type": "DataCollatorForSeq2Seq",
-        "padding": "longest",
-        "max_length": 2048,
-        "pad_to_multiple_of": 8,
-        "return_tensors": "pt",
-        "mlm": False,
-        "mlm_probability": 0.15
-    })
+
+    train: dict[str, Any] = Field(
+        default_factory=lambda: {
+            "batch_size": 4,
+            "gradient_accumulation_steps": 4,
+            "shuffle": True,
+            "num_workers": 4,
+            "pin_memory": True,
+            "drop_last": False,
+            "persistent_workers": True,
+            "prefetch_factor": 2,
+            "timeout": 0,
+        }
+    )
+    eval: dict[str, Any] = Field(
+        default_factory=lambda: {
+            "batch_size": 4,
+            "shuffle": False,
+            "num_workers": 4,
+            "pin_memory": True,
+            "drop_last": False,
+            "persistent_workers": True,
+            "prefetch_factor": 2,
+        }
+    )
+    test: dict[str, Any] = Field(
+        default_factory=lambda: {
+            "batch_size": 4,
+            "shuffle": False,
+            "num_workers": 4,
+            "pin_memory": True,
+        }
+    )
+    collator: dict[str, Any] = Field(
+        default_factory=lambda: {
+            "type": "DataCollatorForSeq2Seq",
+            "padding": "longest",
+            "max_length": 2048,
+            "pad_to_multiple_of": 8,
+            "return_tensors": "pt",
+            "mlm": False,
+            "mlm_probability": 0.15,
+        }
+    )
 
 
 class MixingConfig(BaseModel):
     """Data mixing configuration."""
+
     enabled: bool = False
     strategy: str = "proportional"
-    custom_weights: Dict[str, float] = Field(default_factory=dict)
+    custom_weights: dict[str, float] = Field(default_factory=dict)
     interleave: bool = True
     seed: int = 42
     stop_on_shortest: bool = False
@@ -866,18 +937,20 @@ class MixingConfig(BaseModel):
 
 class StreamingConfig(BaseModel):
     """Streaming configuration."""
+
     enabled: bool = False
     buffer_size: int = 10000
     shuffle_seed: int = 42
-    take_n: Optional[int] = None
+    take_n: int | None = None
 
 
 class DataConfigComplete(BaseModel):
     """Complete data configuration."""
-    datasets: List[DatasetConfig] = Field(default_factory=list)
-    prompt_templates: Dict[str, PromptTemplateConfig] = Field(default_factory=dict)
+
+    datasets: list[DatasetConfig] = Field(default_factory=list)
+    prompt_templates: dict[str, PromptTemplateConfig] = Field(default_factory=dict)
     default_template: str = "alpaca"
-    processing: Dict[str, Any] = Field(default_factory=dict)
+    processing: dict[str, Any] = Field(default_factory=dict)
     output: OutputConfig = Field(default_factory=OutputConfig)
     dataloader: DataLoaderConfig = Field(default_factory=DataLoaderConfig)
     mixing: MixingConfig = Field(default_factory=MixingConfig)
@@ -888,8 +961,10 @@ class DataConfigComplete(BaseModel):
 # LOGGING CONFIGURATION MODELS
 # =============================================================================
 
+
 class ConsoleLogConfig(BaseModel):
     """Console logging configuration."""
+
     enabled: bool = True
     level: str = "INFO"
     stream: str = "stdout"
@@ -899,63 +974,79 @@ class ConsoleLogConfig(BaseModel):
     show_logger_name: bool = True
     show_module: bool = False
     show_line_number: bool = False
-    colors: Dict[str, str] = Field(default_factory=lambda: {
-        "DEBUG": "cyan",
-        "INFO": "green",
-        "WARNING": "yellow",
-        "ERROR": "red",
-        "CRITICAL": "bold_red"
-    })
+    colors: dict[str, str] = Field(
+        default_factory=lambda: {
+            "DEBUG": "cyan",
+            "INFO": "green",
+            "WARNING": "yellow",
+            "ERROR": "red",
+            "CRITICAL": "bold_red",
+        }
+    )
 
 
 class FileLogConfig(BaseModel):
     """File logging configuration."""
+
     enabled: bool = True
     level: str = "DEBUG"
     filename: str = "training.log"
-    rotation: Dict[str, Any] = Field(default_factory=lambda: {
-        "enabled": True,
-        "max_bytes": 10485760,
-        "backup_count": 10,
-        "encoding": "utf-8",
-        "delay": False
-    })
+    rotation: dict[str, Any] = Field(
+        default_factory=lambda: {
+            "enabled": True,
+            "max_bytes": 10485760,
+            "backup_count": 10,
+            "encoding": "utf-8",
+            "delay": False,
+        }
+    )
     format: str = "json"
-    compression: Optional[str] = None
+    compression: str | None = None
 
 
 class ErrorLogConfig(BaseModel):
     """Error logging configuration."""
+
     enabled: bool = True
     level: str = "ERROR"
     filename: str = "errors.log"
-    rotation: Dict[str, Any] = Field(default_factory=lambda: {
-        "enabled": True,
-        "max_bytes": 10485760,
-        "backup_count": 5
-    })
+    rotation: dict[str, Any] = Field(
+        default_factory=lambda: {"enabled": True, "max_bytes": 10485760, "backup_count": 5}
+    )
     capture_traceback: bool = True
     traceback_format: str = "full"
 
 
 class TrainingLogConfig(BaseModel):
     """Training metrics logging."""
+
     enabled: bool = True
     level: str = "INFO"
     filename: str = "training_metrics.log"
     log_metrics: bool = True
-    metrics: List[str] = Field(default_factory=lambda: [
-        "step", "epoch", "loss", "learning_rate", "grad_norm",
-        "tokens_per_second", "samples_per_second",
-        "gpu_memory_allocated", "gpu_memory_reserved",
-        "gpu_utilization", "cpu_percent", "ram_percent"
-    ])
+    metrics: list[str] = Field(
+        default_factory=lambda: [
+            "step",
+            "epoch",
+            "loss",
+            "learning_rate",
+            "grad_norm",
+            "tokens_per_second",
+            "samples_per_second",
+            "gpu_memory_allocated",
+            "gpu_memory_reserved",
+            "gpu_utilization",
+            "cpu_percent",
+            "ram_percent",
+        ]
+    )
     log_every: int = 10
     log_first_step: bool = True
 
 
 class TensorBoardConfig(BaseModel):
     """TensorBoard configuration."""
+
     enabled: bool = True
     log_dir: str = "./logs/tensorboard"
     experiment_name: str = "{run_name}"
@@ -970,37 +1061,42 @@ class TensorBoardConfig(BaseModel):
     profile_batch: int = 0
     histogram_freq: int = 1
     embeddings_freq: int = 0
-    scalar_tags: Dict[str, List[str]] = Field(default_factory=dict)
-    histogram_tags: List[str] = Field(default_factory=list)
-    image_tags: List[str] = Field(default_factory=list)
+    scalar_tags: dict[str, list[str]] = Field(default_factory=dict)
+    histogram_tags: list[str] = Field(default_factory=list)
+    image_tags: list[str] = Field(default_factory=list)
 
 
 class WandBConfig(BaseModel):
     """Weights & Biases configuration."""
+
     enabled: bool = True
     project: str = "llm-finetuning"
-    entity: Optional[str] = None
+    entity: str | None = None
     name: str = "{run_name}"
-    id: Optional[str] = None
+    id: str | None = None
     resume: str = "allow"
-    group: Optional[str] = None
+    group: str | None = None
     job_type: str = "training"
-    tags: List[str] = Field(default_factory=lambda: ["qlora", "llama3", "fine-tuning", "production"])
+    tags: list[str] = Field(
+        default_factory=lambda: ["qlora", "llama3", "fine-tuning", "production"]
+    )
     notes: str = ""
-    config: Dict[str, Any] = Field(default_factory=lambda: {"log_all": True, "exclude_keys": []})
+    config: dict[str, Any] = Field(default_factory=lambda: {"log_all": True, "exclude_keys": []})
     log_freq: int = 10
-    log_model: Union[bool, str] = True
+    log_model: bool | str = True
     log_gradients: bool = True
     log_parameters: bool = True
-    watch: Dict[str, Any] = Field(default_factory=lambda: {
-        "enabled": True,
-        "log": "all",
-        "log_freq": 100,
-        "log_graph": True,
-        "log_param_shapes": True
-    })
-    artifacts: Dict[str, Any] = Field(default_factory=dict)
-    sweep: Dict[str, Any] = Field(default_factory=dict)
+    watch: dict[str, Any] = Field(
+        default_factory=lambda: {
+            "enabled": True,
+            "log": "all",
+            "log_freq": 100,
+            "log_graph": True,
+            "log_param_shapes": True,
+        }
+    )
+    artifacts: dict[str, Any] = Field(default_factory=dict)
+    sweep: dict[str, Any] = Field(default_factory=dict)
     offline: bool = False
     anonymous: str = "never"
     sync_tensorboard: bool = True
@@ -1012,24 +1108,26 @@ class WandBConfig(BaseModel):
 
 class MLflowConfig(BaseModel):
     """MLflow configuration."""
+
     enabled: bool = False
     tracking_uri: str = "http://localhost:5000"
     experiment_name: str = "llm-finetuning"
     run_name: str = "{run_name}"
-    tags: Dict[str, str] = Field(default_factory=dict)
+    tags: dict[str, str] = Field(default_factory=dict)
     log_params: bool = True
     log_metrics: bool = True
     log_artifacts: bool = True
     log_models: bool = True
     register_model: bool = False
     model_name: str = "llm-finetuned-model"
-    model_aliases: List[str] = Field(default_factory=lambda: ["staging"])
+    model_aliases: list[str] = Field(default_factory=lambda: ["staging"])
     artifact_location: str = "./mlruns"
-    autolog: Dict[str, Any] = Field(default_factory=dict)
+    autolog: dict[str, Any] = Field(default_factory=dict)
 
 
 class LoggingConfigComplete(BaseModel):
     """Complete logging configuration."""
+
     level: str = "INFO"
     format: str = "json"
     colored_console: bool = True
@@ -1038,14 +1136,16 @@ class LoggingConfigComplete(BaseModel):
     log_dir: str = "./logs"
     log_file_pattern: str = "{name}_{timestamp}.log"
     file_timestamp_format: str = "%Y%m%d_%H%M%S"
-    extra_fields: Dict[str, Any] = Field(default_factory=dict)
-    rotation: Dict[str, Any] = Field(default_factory=lambda: {
-        "enabled": True,
-        "max_bytes": 10485760,
-        "backup_count": 10,
-        "encoding": "utf-8",
-        "delay": False
-    })
+    extra_fields: dict[str, Any] = Field(default_factory=dict)
+    rotation: dict[str, Any] = Field(
+        default_factory=lambda: {
+            "enabled": True,
+            "max_bytes": 10485760,
+            "backup_count": 10,
+            "encoding": "utf-8",
+            "delay": False,
+        }
+    )
     console: ConsoleLogConfig = Field(default_factory=ConsoleLogConfig)
     file: FileLogConfig = Field(default_factory=FileLogConfig)
     error_log: ErrorLogConfig = Field(default_factory=ErrorLogConfig)
@@ -1059,12 +1159,14 @@ class LoggingConfigComplete(BaseModel):
 # EVALUATION CONFIGURATION MODELS
 # =============================================================================
 
+
 class GenerationConfig(BaseModel):
     """Generation configuration."""
+
     max_new_tokens: int = 512
     min_new_tokens: int = 1
     early_stopping: bool = True
-    max_length: Optional[int] = None
+    max_length: int | None = None
     do_sample: bool = True
     temperature: float = 0.7
     top_p: float = 0.9
@@ -1080,8 +1182,8 @@ class GenerationConfig(BaseModel):
     num_beam_groups: int = 1
     num_return_sequences: int = 1
     beam_search: bool = False
-    eos_token_id: Optional[int] = None
-    pad_token_id: Optional[int] = None
+    eos_token_id: int | None = None
+    pad_token_id: int | None = None
     use_cache: bool = True
     synced_gpus: bool = False
     penalty_alpha: float = 0.0
@@ -1091,16 +1193,17 @@ class GenerationConfig(BaseModel):
 
 class EvalDatasetConfig(BaseModel):
     """Evaluation dataset configuration."""
+
     name: str
     path: str
-    config_name: Optional[str] = None
+    config_name: str | None = None
     split: str = "test"
-    subset: Optional[str] = None
-    max_samples: Optional[int] = None
+    subset: str | None = None
+    max_samples: int | None = None
     streaming: bool = False
     prompt_template: str = "alpaca"
     system_message: str = "You are a helpful assistant."
-    metrics: List[str] = Field(default_factory=list)
+    metrics: list[str] = Field(default_factory=list)
     weight: float = 1.0
     category: str = "general"
     description: str = ""
@@ -1108,18 +1211,22 @@ class EvalDatasetConfig(BaseModel):
 
 class RougeConfig(BaseModel):
     """ROUGE metric configuration."""
+
     enabled: bool = True
-    rouge_types: List[str] = Field(default_factory=lambda: ["rouge1", "rouge2", "rougeL", "rougeLsum"])
+    rouge_types: list[str] = Field(
+        default_factory=lambda: ["rouge1", "rouge2", "rougeL", "rougeLsum"]
+    )
     use_stemmer: bool = True
     use_aggregator: bool = True
     confidence_interval: float = 0.95
     bootstrap_samples: int = 1000
-    tokenizer: Optional[str] = None
+    tokenizer: str | None = None
     split_summaries: bool = True
 
 
 class BleuConfig(BaseModel):
     """BLEU metric configuration."""
+
     enabled: bool = True
     max_order: int = 4
     smooth: bool = True
@@ -1133,21 +1240,23 @@ class BleuConfig(BaseModel):
 
 class BertScoreConfig(BaseModel):
     """BERTScore metric configuration."""
+
     enabled: bool = True
     model_type: str = "microsoft/deberta-xlarge-mnli"
     num_layers: int = 17
     batch_size: int = 32
     device: str = "cuda"
     rescale_with_baseline: bool = True
-    baseline_path: Optional[str] = None
+    baseline_path: str | None = None
     lang: str = "en"
     idf: bool = False
     verbose: bool = False
-    metrics: List[str] = Field(default_factory=lambda: ["precision", "recall", "f1"])
+    metrics: list[str] = Field(default_factory=lambda: ["precision", "recall", "f1"])
 
 
 class PerplexityConfig(BaseModel):
     """Perplexity metric configuration."""
+
     enabled: bool = True
     model_id: str = "gpt2-large"
     use_eval_model: bool = False
@@ -1161,25 +1270,28 @@ class PerplexityConfig(BaseModel):
 
 class DistinctConfig(BaseModel):
     """Distinct-n metric configuration."""
+
     enabled: bool = True
-    n_grams: List[int] = Field(default_factory=lambda: [1, 2, 3, 4])
+    n_grams: list[int] = Field(default_factory=lambda: [1, 2, 3, 4])
     max_n: int = 4
     normalize: bool = True
 
 
 class EvaluationConfigComplete(BaseModel):
     """Complete evaluation configuration."""
+
     generation: GenerationConfig = Field(default_factory=GenerationConfig)
-    datasets: List[EvalDatasetConfig] = Field(default_factory=list)
-    metrics: Dict[str, Any] = Field(default_factory=dict)
-    evaluation: Dict[str, Any] = Field(default_factory=dict)
-    report: Dict[str, Any] = Field(default_factory=dict)
-    baseline: Dict[str, Any] = Field(default_factory=dict)
+    datasets: list[EvalDatasetConfig] = Field(default_factory=list)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    evaluation: dict[str, Any] = Field(default_factory=dict)
+    report: dict[str, Any] = Field(default_factory=dict)
+    baseline: dict[str, Any] = Field(default_factory=dict)
 
 
 # =============================================================================
 # MAIN CONFIG MANAGER
 # =============================================================================
+
 
 class ConfigManager:
     """
@@ -1187,14 +1299,10 @@ class ConfigManager:
     overrides, and Pydantic validation.
     """
 
-    def __init__(
-        self,
-        config_dir: Union[str, Path] = "configs",
-        env_file: Optional[Union[str, Path]] = ".env"
-    ):
+    def __init__(self, config_dir: str | Path = "configs", env_file: str | Path | None = ".env"):
         self.config_dir = Path(config_dir)
         self.env_file = Path(env_file) if env_file else None
-        self._configs: Dict[str, Any] = {}
+        self._configs: dict[str, Any] = {}
         self._load_env_file()
         self._load_all_configs()
 
@@ -1208,7 +1316,7 @@ class ConfigManager:
                         key, value = line.split("=", 1)
                         os.environ.setdefault(key.strip(), value.strip())
 
-    def _load_yaml(self, filename: str) -> Dict[str, Any]:
+    def _load_yaml(self, filename: str) -> dict[str, Any]:
         """Load a YAML configuration file."""
         path = self.config_dir / filename
         if not path.exists():
@@ -1235,23 +1343,33 @@ class ConfigManager:
         """Load and validate all configuration files."""
         # Training config
         training_data = self._resolve_env_vars(self._load_yaml("training.yaml"))
-        self._configs["training"] = TrainingConfig(**training_data) if training_data else TrainingConfig()
+        self._configs["training"] = (
+            TrainingConfig(**training_data) if training_data else TrainingConfig()
+        )
 
         # Model config
         model_data = self._resolve_env_vars(self._load_yaml("model.yaml"))
-        self._configs["model"] = ModelConfigComplete(**model_data) if model_data else ModelConfigComplete()
+        self._configs["model"] = (
+            ModelConfigComplete(**model_data) if model_data else ModelConfigComplete()
+        )
 
         # Data config
         data_data = self._resolve_env_vars(self._load_yaml("data.yaml"))
-        self._configs["data"] = DataConfigComplete(**data_data) if data_data else DataConfigComplete()
+        self._configs["data"] = (
+            DataConfigComplete(**data_data) if data_data else DataConfigComplete()
+        )
 
         # Logging config
         logging_data = self._resolve_env_vars(self._load_yaml("logging.yaml"))
-        self._configs["logging"] = LoggingConfigComplete(**logging_data) if logging_data else LoggingConfigComplete()
+        self._configs["logging"] = (
+            LoggingConfigComplete(**logging_data) if logging_data else LoggingConfigComplete()
+        )
 
         # Evaluation config
         eval_data = self._resolve_env_vars(self._load_yaml("evaluation.yaml"))
-        self._configs["evaluation"] = EvaluationConfigComplete(**eval_data) if eval_data else EvaluationConfigComplete()
+        self._configs["evaluation"] = (
+            EvaluationConfigComplete(**eval_data) if eval_data else EvaluationConfigComplete()
+        )
 
     @property
     def training(self) -> TrainingConfig:
@@ -1275,7 +1393,8 @@ class ConfigManager:
 
     def update(self, **kwargs: Any) -> None:
         """Update configuration sections programmatically with deep merge."""
-        def deep_merge(base: Dict[str, Any], update: Dict[str, Any]) -> Dict[str, Any]:
+
+        def deep_merge(base: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
             """Recursively merge update dict into base dict."""
             result = base.copy()
             for key, value in update.items():
@@ -1301,7 +1420,7 @@ class ConfigManager:
                 elif section == "evaluation":
                     self._configs[section] = EvaluationConfigComplete(**merged)
 
-    def save_resolved(self, output_path: Union[str, Path]) -> None:
+    def save_resolved(self, output_path: str | Path) -> None:
         """Save fully resolved configuration to YAML."""
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1327,7 +1446,7 @@ class ConfigManager:
 
     def validate_all(self) -> bool:
         """Validate all configurations. Raises ValidationError if invalid."""
-        for name, config in self._configs.items():
+        for _name, config in self._configs.items():
             config.model_validate(config.model_dump())
         return True
 
@@ -1336,12 +1455,11 @@ class ConfigManager:
 # CONVENIENCE FUNCTIONS
 # =============================================================================
 
-_config_manager: Optional[ConfigManager] = None
+_config_manager: ConfigManager | None = None
 
 
 def get_config_manager(
-    config_dir: Union[str, Path] = "configs",
-    env_file: Optional[Union[str, Path]] = ".env"
+    config_dir: str | Path = "configs", env_file: str | Path | None = ".env"
 ) -> ConfigManager:
     """Get or create the global ConfigManager instance."""
     global _config_manager
@@ -1351,8 +1469,7 @@ def get_config_manager(
 
 
 def load_config(
-    config_dir: Union[str, Path] = "configs",
-    env_file: Optional[Union[str, Path]] = ".env"
+    config_dir: str | Path = "configs", env_file: str | Path | None = ".env"
 ) -> ConfigManager:
     """Load and return a new ConfigManager instance."""
     return ConfigManager(config_dir, env_file)
@@ -1404,7 +1521,6 @@ __all__ = [
     "SplittingConfig",
     "OutputConfig",
     "DataLoaderConfig",
-    "CollatorConfig",
     "MixingConfig",
     "StreamingConfig",
     "LoggingConfigComplete",

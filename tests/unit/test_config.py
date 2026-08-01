@@ -1,10 +1,6 @@
 """Unit tests for src/config.py."""
 
 import os
-import sys
-from pathlib import Path
-
-import pytest
 
 from src.config import ConfigManager
 

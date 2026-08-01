@@ -7,22 +7,15 @@ early stopping, logging, and profiling.
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 import time
-from abc import ABC, abstractmethod
+from abc import ABC
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import torch
 from transformers import TrainerCallback, TrainerControl, TrainerState
-from transformers.integrations import (
-    TensorBoardCallback,
-    WandbCallback,
-    MLflowCallback,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -30,19 +23,20 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CallbackState:
     """Internal state for callback coordination."""
-    best_metric: Optional[float] = None
+
+    best_metric: float | None = None
     best_step: int = 0
     patience_counter: int = 0
     training_start_time: float = field(default_factory=time.time)
     last_log_time: float = field(default_factory=time.time)
-    step_times: List[float] = field(default_factory=list)
+    step_times: list[float] = field(default_factory=list)
     peak_memory_mb: float = 0.0
 
 
 class BaseCallback(TrainerCallback, ABC):
     """Base callback with common utilities."""
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
         self.state = CallbackState()
 
@@ -63,15 +57,15 @@ class BaseCallback(TrainerCallback, ABC):
         if seconds < 60:
             return f"{seconds:.1f}s"
         elif seconds < 3600:
-            return f"{seconds/60:.1f}m"
+            return f"{seconds / 60:.1f}m"
         else:
-            return f"{seconds/3600:.1f}h"
+            return f"{seconds / 3600:.1f}h"
 
 
 class EarlyStoppingCallback(BaseCallback):
     """
     Early stopping callback with configurable patience and threshold.
-    
+
     Stops training when the monitored metric doesn't improve for `patience`
     evaluations by at least `threshold`.
     """
@@ -91,11 +85,11 @@ class EarlyStoppingCallback(BaseCallback):
         self.greater_is_better = greater_is_better
         self.verbose = verbose
         self.state = CallbackState()
-        self._best_value: Optional[float] = None
+        self._best_value: float | None = None
         self._counter = 0
 
     @property
-    def best_metric(self) -> Optional[float]:
+    def best_metric(self) -> float | None:
         return self._best_value
 
     @property
@@ -111,7 +105,7 @@ class EarlyStoppingCallback(BaseCallback):
         args: Any,
         state: TrainerState,
         control: TrainerControl,
-        metrics: Optional[Dict[str, float]] = None,
+        metrics: dict[str, float] | None = None,
         **kwargs,
     ) -> None:
         if metrics is None or self.metric_for_best not in metrics:
@@ -161,7 +155,7 @@ class EarlyStoppingCallback(BaseCallback):
 class ModelCheckpointCallback(BaseCallback):
     """
     Model checkpointing callback with best model tracking.
-    
+
     Saves checkpoints based on strategy and keeps track of best model
     based on monitored metric.
     """
@@ -187,9 +181,9 @@ class ModelCheckpointCallback(BaseCallback):
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.save_optimizer = save_optimizer
         self.save_scheduler = save_scheduler
-        
-        self._best_metric: Optional[float] = None
-        self._saved_checkpoints: List[Path] = []
+
+        self._best_metric: float | None = None
+        self._saved_checkpoints: list[Path] = []
 
     def on_step_end(
         self,
@@ -199,20 +193,26 @@ class ModelCheckpointCallback(BaseCallback):
         **kwargs,
     ) -> None:
         if state.global_step % self.save_steps == 0:
-            self._save_checkpoint(args, state, kwargs.get("model"), kwargs.get("optimizer"), 
-                                 kwargs.get("lr_scheduler"), is_best=False)
+            self._save_checkpoint(
+                args,
+                state,
+                kwargs.get("model"),
+                kwargs.get("optimizer"),
+                kwargs.get("lr_scheduler"),
+                is_best=False,
+            )
 
     def on_evaluate(
         self,
         args: Any,
         state: TrainerState,
         control: TrainerControl,
-        metrics: Optional[Dict[str, float]] = None,
+        metrics: dict[str, float] | None = None,
         **kwargs,
     ) -> None:
         if self.save_best and metrics and self.metric_for_best in metrics:
             current = metrics[self.metric_for_best]
-            
+
             is_best = False
             if self._best_metric is None:
                 is_best = True
@@ -220,20 +220,26 @@ class ModelCheckpointCallback(BaseCallback):
                 is_best = current > self._best_metric
             else:
                 is_best = current < self._best_metric
-            
+
             if is_best:
                 self._best_metric = current
-                self._save_checkpoint(args, state, kwargs.get("model"), kwargs.get("optimizer"),
-                                    kwargs.get("lr_scheduler"), is_best=True)
+                self._save_checkpoint(
+                    args,
+                    state,
+                    kwargs.get("model"),
+                    kwargs.get("optimizer"),
+                    kwargs.get("lr_scheduler"),
+                    is_best=True,
+                )
                 logger.info(f"Saved best model with {self.metric_for_best} = {current:.4f}")
 
     def _save_checkpoint(
         self,
         args: Any,
         state: TrainerState,
-        model: Optional[torch.nn.Module],
-        optimizer: Optional[torch.optim.Optimizer],
-        scheduler: Optional[Any],
+        model: torch.nn.Module | None,
+        optimizer: torch.optim.Optimizer | None,
+        scheduler: Any | None,
         is_best: bool,
     ) -> None:
         if model is None:
@@ -244,12 +250,12 @@ class ModelCheckpointCallback(BaseCallback):
             checkpoint_dir = self.output_dir / "best"
         else:
             checkpoint_dir = self.output_dir / f"checkpoint-{step}"
-        
+
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
         # Save model
         model.save_pretrained(checkpoint_dir, safe_serialization=True)
-        
+
         # Save tokenizer if available
         if hasattr(model, "tokenizer") and model.tokenizer is not None:
             model.tokenizer.save_pretrained(checkpoint_dir)
@@ -259,8 +265,12 @@ class ModelCheckpointCallback(BaseCallback):
             "global_step": step,
             "epoch": state.epoch,
             "best_metric": self._best_metric,
-            "optimizer_state_dict": optimizer.state_dict() if optimizer and self.save_optimizer else None,
-            "scheduler_state_dict": scheduler.state_dict() if scheduler and self.save_scheduler else None,
+            "optimizer_state_dict": (
+                optimizer.state_dict() if optimizer and self.save_optimizer else None
+            ),
+            "scheduler_state_dict": (
+                scheduler.state_dict() if scheduler and self.save_scheduler else None
+            ),
             "rng_state": torch.get_rng_state(),
             "cuda_rng_state": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
         }
@@ -278,6 +288,7 @@ class ModelCheckpointCallback(BaseCallback):
             oldest = self._saved_checkpoints.pop(0)
             if oldest.exists():
                 import shutil
+
                 shutil.rmtree(oldest)
                 logger.info(f"Removed old checkpoint: {oldest}")
 
@@ -285,7 +296,7 @@ class ModelCheckpointCallback(BaseCallback):
 class LoggingCallback(BaseCallback):
     """
     Comprehensive logging callback for training metrics.
-    
+
     Logs to console, file, TensorBoard, W&B, and MLflow.
     """
 
@@ -295,7 +306,7 @@ class LoggingCallback(BaseCallback):
         log_gpu_memory: bool = True,
         log_learning_rate: bool = True,
         log_grad_norm: bool = True,
-        log_file: Optional[str] = None,
+        log_file: str | None = None,
         use_tensorboard: bool = True,
         use_wandb: bool = True,
         use_mlflow: bool = False,
@@ -309,10 +320,10 @@ class LoggingCallback(BaseCallback):
         self.use_tensorboard = use_tensorboard
         self.use_wandb = use_wandb
         self.use_mlflow = use_mlflow
-        
+
         self._tensorboard_writer = None
         self._wandb_run = None
-        
+
         if log_file:
             self._setup_file_logging(log_file)
 
@@ -333,6 +344,7 @@ class LoggingCallback(BaseCallback):
         if self.use_tensorboard:
             try:
                 from torch.utils.tensorboard import SummaryWriter
+
                 self._tensorboard_writer = SummaryWriter(log_dir=args.logging_dir)
             except ImportError:
                 logger.warning("TensorBoard not available, skipping TensorBoard logging")
@@ -340,6 +352,7 @@ class LoggingCallback(BaseCallback):
         if self.use_wandb:
             try:
                 import wandb
+
                 self._wandb_run = wandb.init(
                     project="llm-finetuning",
                     config=vars(args) if hasattr(args, "__dict__") else {},
@@ -353,8 +366,8 @@ class LoggingCallback(BaseCallback):
         args: Any,
         state: TrainerState,
         control: TrainerControl,
-        model: Optional[torch.nn.Module] = None,
-        optimizer: Optional[torch.optim.Optimizer] = None,
+        model: torch.nn.Module | None = None,
+        optimizer: torch.optim.Optimizer | None = None,
         **kwargs,
     ) -> None:
         if state.global_step % self.log_steps != 0:
@@ -370,26 +383,32 @@ class LoggingCallback(BaseCallback):
             "epoch": state.epoch,
             "learning_rate": optimizer.param_groups[0]["lr"] if optimizer else 0,
             "step_time": step_time,
-            "samples_per_sec": args.per_device_train_batch_size * args.gradient_accumulation_steps / step_time if step_time > 0 else 0,
+            "samples_per_sec": (
+                args.per_device_train_batch_size * args.gradient_accumulation_steps / step_time
+                if step_time > 0
+                else 0
+            ),
         }
 
         if self.log_gpu_memory and torch.cuda.is_available():
-            metrics.update({
-                "gpu_memory_allocated_mb": self._get_memory_mb(),
-                "gpu_memory_reserved_mb": torch.cuda.memory_reserved() / 1024 / 1024,
-                "gpu_peak_memory_mb": self._get_peak_memory_mb(),
-            })
+            metrics.update(
+                {
+                    "gpu_memory_allocated_mb": self._get_memory_mb(),
+                    "gpu_memory_reserved_mb": torch.cuda.memory_reserved() / 1024 / 1024,
+                    "gpu_peak_memory_mb": self._get_peak_memory_mb(),
+                }
+            )
 
         if self.log_grad_norm and model is not None:
             total_norm = 0.0
             for p in model.parameters():
                 if p.grad is not None:
                     total_norm += p.grad.data.norm(2).item() ** 2
-            metrics["grad_norm"] = total_norm ** 0.5
+            metrics["grad_norm"] = total_norm**0.5
 
         self._log_metrics(metrics, state.global_step)
 
-    def _log_metrics(self, metrics: Dict[str, float], step: int) -> None:
+    def _log_metrics(self, metrics: dict[str, float], step: int) -> None:
         # Console logging
         log_parts = [f"Step {step}"]
         for k, v in metrics.items():
@@ -408,6 +427,7 @@ class LoggingCallback(BaseCallback):
         # W&B
         if self._wandb_run:
             import wandb
+
             wandb.log(metrics, step=step)
 
         # MLflow
@@ -418,7 +438,7 @@ class LoggingCallback(BaseCallback):
         args: Any,
         state: TrainerState,
         control: TrainerControl,
-        metrics: Optional[Dict[str, float]] = None,
+        metrics: dict[str, float] | None = None,
         **kwargs,
     ) -> None:
         if metrics:
@@ -434,18 +454,19 @@ class LoggingCallback(BaseCallback):
     ) -> None:
         total_time = time.time() - self.state.training_start_time
         logger.info(f"Training completed in {self._format_time(total_time)}")
-        
+
         if self._tensorboard_writer:
             self._tensorboard_writer.close()
         if self._wandb_run:
             import wandb
+
             wandb.finish()
 
 
 class ProfilerCallback(BaseCallback):
     """
     PyTorch profiler callback for performance analysis.
-    
+
     Profiles CPU/GPU usage, memory, and operator-level during training.
     """
 
@@ -453,7 +474,7 @@ class ProfilerCallback(BaseCallback):
         self,
         profile_steps: int = 10,
         profile_dir: str = "./logs/profiler",
-        activities: Optional[List[str]] = None,
+        activities: list[str] | None = None,
         record_shapes: bool = True,
         with_stack: bool = True,
         wait: int = 0,
@@ -471,15 +492,21 @@ class ProfilerCallback(BaseCallback):
         self.schedule = torch.profiler.schedule(
             wait=wait, warmup=warmup, active=active, repeat=repeat
         )
-        self._profiler: Optional[torch.profiler.profile] = None
+        self._profiler: torch.profiler.profile | None = None
 
-    def on_train_begin(self, args: Any, state: TrainerState, control: TrainerControl, **kwargs) -> None:
+    def on_train_begin(
+        self, args: Any, state: TrainerState, control: TrainerControl, **kwargs
+    ) -> None:
         if torch.cuda.is_available():
             self._profiler = torch.profiler.profile(
-                activities=[
-                    torch.profiler.ProfilerActivity.CPU,
-                    torch.profiler.ProfilerActivity.CUDA,
-                ] if "cuda" in self.activities else [torch.profiler.ProfilerActivity.CPU],
+                activities=(
+                    [
+                        torch.profiler.ProfilerActivity.CPU,
+                        torch.profiler.ProfilerActivity.CUDA,
+                    ]
+                    if "cuda" in self.activities
+                    else [torch.profiler.ProfilerActivity.CPU]
+                ),
                 schedule=self.schedule,
                 on_trace_ready=torch.profiler.tensorboard_trace_handler(str(self.profile_dir)),
                 record_shapes=self.record_shapes,
@@ -489,11 +516,15 @@ class ProfilerCallback(BaseCallback):
             )
             self._profiler.__enter__()
 
-    def on_step_end(self, args: Any, state: TrainerState, control: TrainerControl, **kwargs) -> None:
+    def on_step_end(
+        self, args: Any, state: TrainerState, control: TrainerControl, **kwargs
+    ) -> None:
         if self._profiler and state.global_step % self.profile_steps == 0:
             self._profiler.step()
 
-    def on_train_end(self, args: Any, state: TrainerState, control: TrainerControl, **kwargs) -> None:
+    def on_train_end(
+        self, args: Any, state: TrainerState, control: TrainerControl, **kwargs
+    ) -> None:
         if self._profiler:
             self._profiler.__exit__(None, None, None)
             logger.info(f"Profile saved to {self.profile_dir}")
@@ -512,7 +543,7 @@ class GradientNormCallback(BaseCallback):
         args: Any,
         state: TrainerState,
         control: TrainerControl,
-        model: Optional[torch.nn.Module] = None,
+        model: torch.nn.Module | None = None,
         **kwargs,
     ) -> None:
         if state.global_step % self.log_steps != 0 or model is None:
@@ -523,12 +554,14 @@ class GradientNormCallback(BaseCallback):
             if p.grad is not None:
                 param_norm = p.grad.data.norm(2)
                 total_norm += param_norm.item() ** 2
-        total_norm = total_norm ** 0.5
+        total_norm = total_norm**0.5
 
         logger.info(f"Step {state.global_step}: grad_norm = {total_norm:.4f}")
 
         if total_norm > self.max_norm * 10:
-            logger.warning(f"Gradient norm {total_norm:.4f} exceeds threshold, potential instability")
+            logger.warning(
+                f"Gradient norm {total_norm:.4f} exceeds threshold, potential instability"
+            )
 
 
 class ThroughputCallback(BaseCallback):
@@ -578,12 +611,12 @@ class ThroughputCallback(BaseCallback):
 class CallbackManager:
     """
     Central manager for all training callbacks.
-    
+
     Handles callback registration, ordering, and execution.
     """
 
     def __init__(self):
-        self.callbacks: List[BaseCallback] = []
+        self.callbacks: list[BaseCallback] = []
 
     def add_callback(self, callback: BaseCallback) -> None:
         self.callbacks.append(callback)
@@ -591,25 +624,25 @@ class CallbackManager:
     def remove_callback(self, callback_type: type) -> None:
         self.callbacks = [c for c in self.callbacks if not isinstance(c, callback_type)]
 
-    def get_callback(self, callback_type: type) -> Optional[BaseCallback]:
+    def get_callback(self, callback_type: type) -> BaseCallback | None:
         for c in self.callbacks:
             if isinstance(c, callback_type):
                 return c
         return None
 
-    def get_trainer_callbacks(self) -> List[TrainerCallback]:
+    def get_trainer_callbacks(self) -> list[TrainerCallback]:
         """Convert to Trainer-compatible callbacks."""
         return [c for c in self.callbacks if isinstance(c, TrainerCallback)]
 
 
 def create_default_callbacks(
-    config: Optional[Dict[str, Any]] = None,
+    config: dict[str, Any] | None = None,
     output_dir: str = "./checkpoints",
     logging_dir: str = "./logs",
-) -> List[TrainerCallback]:
+) -> list[TrainerCallback]:
     """Create default callback suite for training."""
     config = config or {}
-    
+
     callbacks = [
         EarlyStoppingCallback(
             patience=config.get("early_stopping_patience", 3),
@@ -638,17 +671,21 @@ def create_default_callbacks(
 
     # Add profiler if enabled
     if config.get("use_profiler", False):
-        callbacks.append(ProfilerCallback(
-            profile_steps=config.get("profile_steps", 10),
-            profile_dir=f"{logging_dir}/profiler",
-        ))
+        callbacks.append(
+            ProfilerCallback(
+                profile_steps=config.get("profile_steps", 10),
+                profile_dir=f"{logging_dir}/profiler",
+            )
+        )
 
     # Add gradient norm callback
     if config.get("log_grad_norm", True):
-        callbacks.append(GradientNormCallback(
-            log_steps=config.get("logging_steps", 10),
-            max_norm=config.get("max_grad_norm", 1.0),
-        ))
+        callbacks.append(
+            GradientNormCallback(
+                log_steps=config.get("logging_steps", 10),
+                max_norm=config.get("max_grad_norm", 1.0),
+            )
+        )
 
     # Add throughput callback
     callbacks.append(ThroughputCallback(log_steps=config.get("logging_steps", 10)))

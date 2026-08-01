@@ -3,32 +3,30 @@
 Unit tests for Data Pipeline
 """
 
-import json
 import os
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch, Mock
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
-import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from src.data_pipeline import (
-    DataPipeline,
-    DatasetStatistics,
-    PromptFormatter,
-    AlpacaFormatter,
-    ChatMLFormatter,
-    Llama3Formatter,
-    VicunaFormatter,
-    ZephyrFormatter,
-    PlainFormatter,
-    CustomFormatter,
-    get_formatter,
     FORMATTERS,
     PARQUET_AVAILABLE,
+    AlpacaFormatter,
+    ChatMLFormatter,
+    CustomFormatter,
+    DataPipeline,
+    DatasetStatistics,
+    Llama3Formatter,
+    PlainFormatter,
+    PromptFormatter,
+    VicunaFormatter,
+    ZephyrFormatter,
+    get_formatter,
 )
 
 
@@ -336,9 +334,7 @@ output:
 
     def test_pipeline_init_from_dict(self):
         config_dict = {
-            "datasets": [
-                {"name": "test", "path": "test/path", "split": "train"}
-            ],
+            "datasets": [{"name": "test", "path": "test/path", "split": "train"}],
             "prompt_templates": {},
             "default_template": "alpaca",
             "processing": {},
@@ -351,11 +347,14 @@ output:
         pipeline = DataPipeline(temp_config)
         from datasets import Dataset
         from src.config import ColumnMappingConfig
-        ds = Dataset.from_dict({
-            "prompt": ["test"],
-            "context": [""],
-            "completion": ["result"],
-        })
+
+        ds = Dataset.from_dict(
+            {
+                "prompt": ["test"],
+                "context": [""],
+                "completion": ["result"],
+            }
+        )
         mapping = ColumnMappingConfig(instruction="prompt", input="context", output="completion")
         result = pipeline.apply_column_mapping(ds, mapping)
 
@@ -380,22 +379,28 @@ output:
     def test_validate_dataset(self, temp_config):
         pipeline = DataPipeline(temp_config)
         from datasets import Dataset
-        ds = Dataset.from_dict({
-            "instruction": ["valid instruction", ""],
-            "input": ["", ""],
-            "output": ["valid output", "y"],
-        })
+
+        ds = Dataset.from_dict(
+            {
+                "instruction": ["valid instruction", ""],
+                "input": ["", ""],
+                "output": ["valid output", "y"],
+            }
+        )
         result = pipeline.validate_dataset(ds, "test")
         assert len(result) == 1  # Empty instruction filtered out
 
     def test_clean_dataset(self, temp_config):
         pipeline = DataPipeline(temp_config)
         from datasets import Dataset
-        ds = Dataset.from_dict({
-            "instruction": ["  test  ", "  another  "],
-            "input": ["", ""],
-            "output": ["  result  ", "  more  "],
-        })
+
+        ds = Dataset.from_dict(
+            {
+                "instruction": ["  test  ", "  another  "],
+                "input": ["", ""],
+                "output": ["  result  ", "  more  "],
+            }
+        )
         result = pipeline.clean_dataset(ds, "test")
 
         assert result["instruction"][0] == "test"
@@ -404,11 +409,14 @@ output:
     def test_format_dataset(self, temp_config):
         pipeline = DataPipeline(temp_config)
         from datasets import Dataset
-        ds = Dataset.from_dict({
-            "instruction": ["Write a poem"],
-            "input": [""],
-            "output": ["Roses are red"],
-        })
+
+        ds = Dataset.from_dict(
+            {
+                "instruction": ["Write a poem"],
+                "input": [""],
+                "output": ["Roses are red"],
+            }
+        )
         result = pipeline.format_dataset(ds, "test")
 
         assert "text" in result.column_names
@@ -418,6 +426,7 @@ output:
     def test_split_dataset(self, temp_config):
         pipeline = DataPipeline(temp_config)
         from datasets import Dataset
+
         ds = Dataset.from_dict({"text": [f"sample {i}" for i in range(100)]})
         splits = pipeline.split_dataset(ds)
 
@@ -431,11 +440,14 @@ output:
     def test_compute_statistics(self, temp_config):
         pipeline = DataPipeline(temp_config)
         from datasets import Dataset
-        ds = Dataset.from_dict({
-            "instruction": ["Short", "Medium length instruction", "A" * 100],
-            "input": ["", "", ""],
-            "output": ["Out", "Medium output text", "B" * 50],
-        })
+
+        ds = Dataset.from_dict(
+            {
+                "instruction": ["Short", "Medium length instruction", "A" * 100],
+                "input": ["", "", ""],
+                "output": ["Out", "Medium output text", "B" * 50],
+            }
+        )
         stats = pipeline.compute_statistics(ds, "test")
 
         assert stats.num_samples == 3
@@ -444,17 +456,21 @@ output:
     def test_analyze_sequences(self, temp_config):
         pipeline = DataPipeline(temp_config)
         from datasets import Dataset
-        ds = Dataset.from_dict({
-            "input_ids": [[1, 2, 3], [1, 2], [1, 2, 3, 4, 5]],
-        })
+
+        ds = Dataset.from_dict(
+            {
+                "input_ids": [[1, 2, 3], [1, 2], [1, 2, 3, 4, 5]],
+            }
+        )
         stats = pipeline.analyze_sequences(ds)
 
         assert stats["count"] == 3
-        assert stats["mean"] == 10/3
+        assert stats["mean"] == 10 / 3
 
     def test_export_jsonl(self, temp_config):
         pipeline = DataPipeline(temp_config)
         from datasets import Dataset
+
         ds = Dataset.from_dict({"text": ["a", "b", "c"]})
         with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
             temp_path = f.name
@@ -471,6 +487,7 @@ output:
             pytest.skip("pyarrow not available")
         pipeline = DataPipeline(temp_config)
         from datasets import Dataset
+
         ds = Dataset.from_dict({"text": ["a", "b"]})
         with tempfile.NamedTemporaryFile(mode="w", suffix=".parquet", delete=False) as f:
             temp_path = f.name
@@ -483,6 +500,7 @@ output:
     def test_export_arrow(self, temp_config):
         pipeline = DataPipeline(temp_config)
         from datasets import Dataset
+
         ds = Dataset.from_dict({"text": ["a", "b", "c"]})
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = os.path.join(tmpdir, "test")
@@ -493,6 +511,7 @@ output:
     def test_export_dataset(self, temp_config):
         pipeline = DataPipeline(temp_config)
         from datasets import Dataset
+
         ds = Dataset.from_dict({"text": ["a", "b", "c"]})
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = os.path.join(tmpdir, "test")
@@ -507,12 +526,14 @@ class TestCLI:
 
     def test_create_argument_parser(self):
         from src.data_pipeline import create_argument_parser
+
         parser = create_argument_parser()
         args = parser.parse_args(["--config", "configs/data.yaml"])
         assert args.config == "configs/data.yaml"
 
     def test_parser_defaults(self):
         from src.data_pipeline import create_argument_parser
+
         parser = create_argument_parser()
         args = parser.parse_args([])
         assert args.config == "configs/data.yaml"
@@ -526,11 +547,14 @@ class TestIntegration:
     @patch("src.data_pipeline.load_dataset")
     def test_full_pipeline(self, mock_load_dataset, temp_config):
         from datasets import Dataset
-        real_ds = Dataset.from_dict({
-            "instruction": ["Instruction 1", "Instruction 2"],
-            "input": ["", ""],
-            "output": ["Output 1", "Output 2"],
-        })
+
+        real_ds = Dataset.from_dict(
+            {
+                "instruction": ["Instruction 1", "Instruction 2"],
+                "input": ["", ""],
+                "output": ["Output 1", "Output 2"],
+            }
+        )
         mock_load_dataset.return_value = real_ds
 
         pipeline = DataPipeline(temp_config)
@@ -539,27 +563,9 @@ class TestIntegration:
 
         with patch.object(pipeline, "load_local_datasets", return_value={}):
             with patch.object(pipeline, "export_dataset") as mock_export:
-                result = pipeline.process()
+                pipeline.process()
 
         assert mock_export.called
-
-
-class TestCLI:
-    """Test CLI argument parsing."""
-
-    def test_create_argument_parser(self):
-        from src.data_pipeline import create_argument_parser
-        parser = create_argument_parser()
-        args = parser.parse_args(["--config", "configs/data.yaml"])
-        assert args.config == "configs/data.yaml"
-
-    def test_parser_defaults(self):
-        from src.data_pipeline import create_argument_parser
-        parser = create_argument_parser()
-        args = parser.parse_args([])
-        assert args.config == "configs/data.yaml"
-        assert args.dataset is None
-        assert args.verbose is False
 
 
 if __name__ == "__main__":

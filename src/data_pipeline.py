@@ -21,22 +21,20 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import time
 from abc import ABC, abstractmethod
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
-from datasets import Dataset, DatasetDict, concatenate_datasets, load_dataset
-from datasets import load_from_disk as hf_load_from_disk
-from tqdm.auto import tqdm
+from datasets import Dataset, DatasetDict, load_dataset
 
 try:
     import pyarrow as pa
     import pyarrow.parquet as pq
+
     PARQUET_AVAILABLE = True
 except ImportError:
     PARQUET_AVAILABLE = False
@@ -44,11 +42,12 @@ except ImportError:
 try:
     from tokenizers import Tokenizer
     from transformers import AutoTokenizer, PreTrainedTokenizer, PreTrainedTokenizerFast
+
     TOKENIZERS_AVAILABLE = True
 except ImportError:
     TOKENIZERS_AVAILABLE = False
 
-from src.config import ConfigManager, DataConfigComplete, PromptTemplateConfig
+from src.config import ConfigManager, DataConfigComplete
 
 logger = logging.getLogger(__name__)
 
@@ -56,22 +55,23 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DatasetStatistics:
     """Statistics for a dataset."""
+
     num_samples: int = 0
     num_columns: int = 0
-    column_names: List[str] = field(default_factory=list)
-    instruction_lengths: List[int] = field(default_factory=list)
-    input_lengths: List[int] = field(default_factory=list)
-    output_lengths: List[int] = field(default_factory=list)
-    total_lengths: List[int] = field(default_factory=list)
-    token_lengths: List[int] = field(default_factory=list)
-    percentiles: Dict[str, Dict[int, float]] = field(default_factory=dict)
+    column_names: list[str] = field(default_factory=list)
+    instruction_lengths: list[int] = field(default_factory=list)
+    input_lengths: list[int] = field(default_factory=list)
+    output_lengths: list[int] = field(default_factory=list)
+    total_lengths: list[int] = field(default_factory=list)
+    token_lengths: list[int] = field(default_factory=list)
+    percentiles: dict[str, dict[int, float]] = field(default_factory=dict)
     duplicates_count: int = 0
-    null_counts: Dict[str, int] = field(default_factory=dict)
-    empty_string_counts: Dict[str, int] = field(default_factory=dict)
-    language_distribution: Dict[str, int] = field(default_factory=dict)
+    null_counts: dict[str, int] = field(default_factory=dict)
+    empty_string_counts: dict[str, int] = field(default_factory=dict)
+    language_distribution: dict[str, int] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
-        def stats_for(lengths: List[int]) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
+        def stats_for(lengths: list[int]) -> dict[str, Any]:
             if not lengths:
                 return {"mean": 0, "std": 0, "min": 0, "max": 0, "percentiles": {}}
             return {
@@ -79,7 +79,10 @@ class DatasetStatistics:
                 "std": float(np.std(lengths)),
                 "min": int(np.min(lengths)),
                 "max": int(np.max(lengths)),
-                "percentiles": {str(p): float(np.percentile(lengths, p)) for p in [0, 25, 50, 75, 90, 95, 99, 100]},
+                "percentiles": {
+                    str(p): float(np.percentile(lengths, p))
+                    for p in [0, 25, 50, 75, 90, 95, 99, 100]
+                },
             }
 
         return {
@@ -91,7 +94,9 @@ class DatasetStatistics:
             "output_lengths": stats_for(self.output_lengths),
             "total_lengths": stats_for(self.total_lengths),
             "token_lengths": stats_for(self.token_lengths),
-            "percentiles": {k: {str(kk): vv for kk, vv in v.items()} for k, v in self.percentiles.items()},
+            "percentiles": {
+                k: {str(kk): vv for kk, vv in v.items()} for k, v in self.percentiles.items()
+            },
             "duplicates_count": self.duplicates_count,
             "null_counts": self.null_counts,
             "empty_string_counts": self.empty_string_counts,
@@ -103,14 +108,12 @@ class PromptFormatter(ABC):
     """Abstract base class for prompt formatters."""
 
     @abstractmethod
-    def format(self, example: Dict[str, Any]) -> str:
+    def format(self, example: dict[str, Any]) -> str:
         """Format a single example into a prompt string."""
-        pass
 
     @abstractmethod
-    def format_batch(self, examples: Dict[str, List[Any]]) -> List[str]:
+    def format_batch(self, examples: dict[str, list[Any]]) -> list[str]:
         """Format a batch of examples."""
-        pass
 
 
 class AlpacaFormatter(PromptFormatter):
@@ -130,7 +133,7 @@ class AlpacaFormatter(PromptFormatter):
         self.add_eos_token = add_eos_token
         self.eos_token = eos_token
 
-    def format(self, example: Dict[str, Any]) -> str:
+    def format(self, example: dict[str, Any]) -> str:
         instruction = str(example.get(self.instruction_key, "")).strip()
         input_text = str(example.get(self.input_key, "")).strip()
         output = str(example.get(self.output_key, "")).strip()
@@ -145,7 +148,7 @@ class AlpacaFormatter(PromptFormatter):
 
         return prompt
 
-    def format_batch(self, examples: Dict[str, List[Any]]) -> List[str]:
+    def format_batch(self, examples: dict[str, list[Any]]) -> list[str]:
         batch_size = len(examples[self.instruction_key])
         results = []
         for i in range(batch_size):
@@ -173,7 +176,7 @@ class ChatMLFormatter(PromptFormatter):
         self.add_eos_token = add_eos_token
         self.eos_token = eos_token
 
-    def format(self, example: Dict[str, Any]) -> str:
+    def format(self, example: dict[str, Any]) -> str:
         instruction = str(example.get(self.instruction_key, "")).strip()
         input_text = str(example.get(self.input_key, "")).strip()
         output = str(example.get(self.output_key, "")).strip()
@@ -194,7 +197,7 @@ class ChatMLFormatter(PromptFormatter):
 
         return prompt
 
-    def format_batch(self, examples: Dict[str, List[Any]]) -> List[str]:
+    def format_batch(self, examples: dict[str, list[Any]]) -> list[str]:
         batch_size = len(examples[self.instruction_key])
         results = []
         for i in range(batch_size):
@@ -222,7 +225,7 @@ class Llama3Formatter(PromptFormatter):
         self.add_eos_token = add_eos_token
         self.eos_token = eos_token
 
-    def format(self, example: Dict[str, Any]) -> str:
+    def format(self, example: dict[str, Any]) -> str:
         instruction = str(example.get(self.instruction_key, "")).strip()
         input_text = str(example.get(self.input_key, "")).strip()
         output = str(example.get(self.output_key, "")).strip()
@@ -246,7 +249,7 @@ class Llama3Formatter(PromptFormatter):
 
         return prompt
 
-    def format_batch(self, examples: Dict[str, List[Any]]) -> List[str]:
+    def format_batch(self, examples: dict[str, list[Any]]) -> list[str]:
         batch_size = len(examples[self.instruction_key])
         results = []
         for i in range(batch_size):
@@ -274,7 +277,7 @@ class VicunaFormatter(PromptFormatter):
         self.add_eos_token = add_eos_token
         self.eos_token = eos_token
 
-    def format(self, example: Dict[str, Any]) -> str:
+    def format(self, example: dict[str, Any]) -> str:
         instruction = str(example.get(self.instruction_key, "")).strip()
         input_text = str(example.get(self.input_key, "")).strip()
         output = str(example.get(self.output_key, "")).strip()
@@ -284,18 +287,14 @@ class VicunaFormatter(PromptFormatter):
         else:
             user_content = instruction
 
-        prompt = (
-            f"{self.system_message}\n\n"
-            f"USER: {user_content}\n"
-            f"ASSISTANT: {output}"
-        )
+        prompt = f"{self.system_message}\n\nUSER: {user_content}\nASSISTANT: {output}"
 
         if self.add_eos_token and self.eos_token:
             prompt += self.eos_token
 
         return prompt
 
-    def format_batch(self, examples: Dict[str, List[Any]]) -> List[str]:
+    def format_batch(self, examples: dict[str, list[Any]]) -> list[str]:
         batch_size = len(examples[self.instruction_key])
         results = []
         for i in range(batch_size):
@@ -323,7 +322,7 @@ class ZephyrFormatter(PromptFormatter):
         self.add_eos_token = add_eos_token
         self.eos_token = eos_token
 
-    def format(self, example: Dict[str, Any]) -> str:
+    def format(self, example: dict[str, Any]) -> str:
         instruction = str(example.get(self.instruction_key, "")).strip()
         input_text = str(example.get(self.input_key, "")).strip()
         output = str(example.get(self.output_key, "")).strip()
@@ -344,7 +343,7 @@ class ZephyrFormatter(PromptFormatter):
 
         return prompt
 
-    def format_batch(self, examples: Dict[str, List[Any]]) -> List[str]:
+    def format_batch(self, examples: dict[str, list[Any]]) -> list[str]:
         batch_size = len(examples[self.instruction_key])
         results = []
         for i in range(batch_size):
@@ -366,13 +365,13 @@ class PlainFormatter(PromptFormatter):
         self.add_eos_token = add_eos_token
         self.eos_token = eos_token
 
-    def format(self, example: Dict[str, Any]) -> str:
+    def format(self, example: dict[str, Any]) -> str:
         text = str(example.get(self.text_key, "")).strip()
         if self.add_eos_token and self.eos_token:
             text += self.eos_token
         return text
 
-    def format_batch(self, examples: Dict[str, List[Any]]) -> List[str]:
+    def format_batch(self, examples: dict[str, list[Any]]) -> list[str]:
         texts = examples[self.text_key]
         if self.add_eos_token and self.eos_token:
             return [t + self.eos_token for t in texts]
@@ -400,7 +399,7 @@ class CustomFormatter(PromptFormatter):
         self.add_eos_token = add_eos_token
         self.eos_token = eos_token
 
-    def format(self, example: Dict[str, Any]) -> str:
+    def format(self, example: dict[str, Any]) -> str:
         instruction = str(example.get(self.instruction_key, "")).strip()
         input_text = str(example.get(self.input_key, "")).strip()
         output = str(example.get(self.output_key, "")).strip()
@@ -422,7 +421,7 @@ class CustomFormatter(PromptFormatter):
 
         return prompt
 
-    def format_batch(self, examples: Dict[str, List[Any]]) -> List[str]:
+    def format_batch(self, examples: dict[str, list[Any]]) -> list[str]:
         batch_size = len(examples[self.instruction_key])
         results = []
         for i in range(batch_size):
@@ -431,7 +430,7 @@ class CustomFormatter(PromptFormatter):
         return results
 
 
-FORMATTERS: Dict[str, type] = {
+FORMATTERS: dict[str, type] = {
     "alpaca": AlpacaFormatter,
     "chatml": ChatMLFormatter,
     "llama3": Llama3Formatter,
@@ -452,7 +451,7 @@ def get_formatter(name: str, **kwargs) -> PromptFormatter:
 class DataPipeline:
     """Main data processing pipeline."""
 
-    def __init__(self, config: Union[DataConfigComplete, Dict[str, Any], str, Path]):
+    def __init__(self, config: DataConfigComplete | dict[str, Any] | str | Path):
         """
         Initialize the data pipeline.
 
@@ -463,6 +462,7 @@ class DataPipeline:
             path = Path(config)
             if path.is_file():
                 import yaml
+
                 with open(path) as f:
                     raw_dict = yaml.safe_load(f)
                 self.config = DataConfigComplete(**raw_dict)
@@ -477,8 +477,8 @@ class DataPipeline:
             self.config = config
             self.config_manager = None
 
-        self.tokenizer: Optional[PreTrainedTokenizer] = None
-        self.formatter: Optional[PromptFormatter] = None
+        self.tokenizer: PreTrainedTokenizer | None = None
+        self.formatter: PromptFormatter | None = None
         self.statistics = DatasetStatistics()
         self._setup_logging()
 
@@ -489,7 +489,7 @@ class DataPipeline:
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         )
 
-    def download_datasets(self) -> Dict[str, Dataset]:
+    def download_datasets(self) -> dict[str, Dataset]:
         """
         Download datasets from Hugging Face Hub or local paths.
 
@@ -501,7 +501,7 @@ class DataPipeline:
         download_config = self.config.processing.get("download", {})
         cache_dir = download_config.get("cache_dir", "./data/raw")
         force_redownload = download_config.get("force_redownload", False)
-        resume_download = download_config.get("resume_download", True)
+        download_config.get("resume_download", True)
         num_proc = download_config.get("num_proc", 4)
         max_retries = download_config.get("max_retries", 3)
 
@@ -529,7 +529,11 @@ class DataPipeline:
                             data_files=ds_config.data_files,
                             split=ds_config.split,
                             cache_dir=cache_dir,
-                            download_mode="force_redownload" if force_redownload else "reuse_dataset_if_exists",
+                            download_mode=(
+                                "force_redownload"
+                                if force_redownload
+                                else "reuse_dataset_if_exists"
+                            ),
                             num_proc=num_proc,
                         )
 
@@ -544,11 +548,11 @@ class DataPipeline:
                     logger.warning(f"Attempt {attempt + 1}/{max_retries} failed for {name}: {e}")
                     if attempt == max_retries - 1:
                         raise
-                    time.sleep(2 ** attempt)
+                    time.sleep(2**attempt)
 
         return datasets
 
-    def load_local_datasets(self) -> Dict[str, Dataset]:
+    def load_local_datasets(self) -> dict[str, Dataset]:
         """Load datasets from local files (JSONL, CSV, Parquet)."""
         logger.info("Loading local datasets...")
         datasets = {}
@@ -557,18 +561,24 @@ class DataPipeline:
 
         if external.get("local_jsonl", {}).get("enabled", False):
             paths = external["local_jsonl"]
-            for split_name, path in [("train", paths.get("train_path")),
-                                       ("validation", paths.get("val_path")),
-                                       ("test", paths.get("test_path"))]:
+            for split_name, path in [
+                ("train", paths.get("train_path")),
+                ("validation", paths.get("val_path")),
+                ("test", paths.get("test_path")),
+            ]:
                 if path and Path(path).exists():
-                    datasets[f"local_{split_name}"] = load_dataset("json", data_files=path, split="train")
+                    datasets[f"local_{split_name}"] = load_dataset(
+                        "json", data_files=path, split="train"
+                    )
 
         if external.get("local_csv", {}).get("enabled", False):
             paths = external["local_csv"]
             text_column = paths.get("text_column", "text")
-            for split_name, path in [("train", paths.get("train_path")),
-                                       ("validation", paths.get("val_path")),
-                                       ("test", paths.get("test_path"))]:
+            for split_name, path in [
+                ("train", paths.get("train_path")),
+                ("validation", paths.get("val_path")),
+                ("test", paths.get("test_path")),
+            ]:
                 if path and Path(path).exists():
                     ds = load_dataset("csv", data_files=path, split="train")
                     if text_column in ds.column_names:
@@ -577,11 +587,15 @@ class DataPipeline:
 
         if external.get("local_parquet", {}).get("enabled", False):
             paths = external["local_parquet"]
-            for split_name, path in [("train", paths.get("train_path")),
-                                       ("validation", paths.get("val_path")),
-                                       ("test", paths.get("test_path"))]:
+            for split_name, path in [
+                ("train", paths.get("train_path")),
+                ("validation", paths.get("val_path")),
+                ("test", paths.get("test_path")),
+            ]:
                 if path and Path(path).exists():
-                    datasets[f"local_parquet_{split_name}"] = load_dataset("parquet", data_files=path, split="train")
+                    datasets[f"local_parquet_{split_name}"] = load_dataset(
+                        "parquet", data_files=path, split="train"
+                    )
 
         if external.get("webdataset", {}).get("enabled", False):
             urls = external["webdataset"].get("urls", [])
@@ -684,13 +698,14 @@ class DataPipeline:
         if val_config.get("detect_language", False):
             try:
                 from langdetect import detect
+
                 langs = Counter()
                 for ex in dataset.select(range(min(1000, len(dataset)))):
                     text = str(ex.get("instruction", "")) + " " + str(ex.get("output", ""))
                     try:
                         lang = detect(text)
                         langs[lang] += 1
-                    except:
+                    except Exception:
                         pass
                 self.statistics.language_distribution = dict(langs)
                 expected = val_config.get("expected_language", "en")
@@ -729,9 +744,11 @@ class DataPipeline:
                         value = value.strip()
                     if norm_unicode:
                         import unicodedata
+
                         value = unicodedata.normalize("NFKC", value)
                     if rem_html:
                         import re
+
                         value = re.sub(r"<[^>]+>", "", value)
                 example[key] = value
             return example
@@ -740,8 +757,10 @@ class DataPipeline:
         dataset = dataset.map(clean_example, num_proc=num_proc)
 
         if clean_config.get("remove_nulls", True):
+
             def has_no_nulls(example):
                 return all(v is not None for v in example.values())
+
             dataset = dataset.filter(has_no_nulls)
 
         if clean_config.get("remove_duplicates", True):
@@ -756,7 +775,9 @@ class DataPipeline:
                     dataset = dataset.remove_columns(["__index_level_0__"])
                 dup_count = original_len - len(dataset)
                 if dup_count > 0:
-                    logger.info(f"Removed {dup_count} duplicates during cleaning from {dataset_name}")
+                    logger.info(
+                        f"Removed {dup_count} duplicates during cleaning from {dataset_name}"
+                    )
 
         for cleaner_name in clean_config.get("custom_cleaners", []):
             if hasattr(self, f"_custom_clean_{cleaner_name}"):
@@ -779,11 +800,13 @@ class DataPipeline:
         if not format_config.get("enabled", True):
             return dataset
 
-        logger.info(f"Formatting {dataset_name} with template: {format_config.get('template', 'alpaca')}")
+        logger.info(
+            f"Formatting {dataset_name} with template: {format_config.get('template', 'alpaca')}"
+        )
 
         template_name = format_config.get("template", "alpaca")
         system_message = format_config.get("system_message", "You are a helpful assistant.")
-        include_input = format_config.get("include_input", True)
+        format_config.get("include_input", True)
         add_eos_token = format_config.get("add_eos_token", True)
         formatted_field = format_config.get("formatted_field", "text")
         keep_original = format_config.get("keep_original_columns", False)
@@ -797,13 +820,16 @@ class DataPipeline:
             template_name = self.config.default_template
 
         template_config = prompt_templates.get(template_name, {})
+
         def _get_cfg_val(obj, key, default):
             if isinstance(obj, dict):
                 return obj.get(key, default)
             return getattr(obj, key, default)
 
         # Get keys from template config
-        instruction_key = _get_cfg_val(template_config, "instruction_key", "instruction") or "instruction"
+        instruction_key = (
+            _get_cfg_val(template_config, "instruction_key", "instruction") or "instruction"
+        )
         input_key = _get_cfg_val(template_config, "input_key", "input") or "input"
         output_key = _get_cfg_val(template_config, "output_key", "output") or "output"
 
@@ -852,7 +878,9 @@ class DataPipeline:
         elif template_name == "custom":
             self.formatter = CustomFormatter(
                 template=template_config.get("template", "{instruction}\n\n{output}"),
-                template_with_input=template_config.get("template_with_input", "{instruction}\n\n{input}\n\n{output}"),
+                template_with_input=template_config.get(
+                    "template_with_input", "{instruction}\n\n{input}\n\n{output}"
+                ),
                 instruction_key=instruction_key,
                 input_key=input_key,
                 output_key=output_key,
@@ -874,7 +902,9 @@ class DataPipeline:
             texts = formatter.format_batch(examples)
             return {formatted_field: texts}
 
-        remove_columns = [] if keep_original else [c for c in dataset.column_names if c != formatted_field]
+        remove_columns = (
+            [] if keep_original else [c for c in dataset.column_names if c != formatted_field]
+        )
         num_proc = self.config.processing.get("download", {}).get("num_proc", 4)
         dataset = dataset.map(
             format_batch,
@@ -886,7 +916,7 @@ class DataPipeline:
 
         return dataset
 
-    def load_tokenizer(self, tokenizer_name_or_path: Optional[str] = None) -> PreTrainedTokenizer:
+    def load_tokenizer(self, tokenizer_name_or_path: str | None = None) -> PreTrainedTokenizer:
         """
         Load tokenizer for tokenization.
 
@@ -984,11 +1014,13 @@ class DataPipeline:
 
             percentiles = tok_config.get("percentiles", [0, 25, 50, 75, 90, 95, 99, 100])
             for p in percentiles:
-                self.statistics.percentiles.setdefault("tokens", {})[p] = float(np.percentile(lengths, p))
+                self.statistics.percentiles.setdefault("tokens", {})[p] = float(
+                    np.percentile(lengths, p)
+                )
 
         return tokenized
 
-    def analyze_sequences(self, dataset: Dataset) -> Dict[str, Any]:
+    def analyze_sequences(self, dataset: Dataset) -> dict[str, Any]:
         """
         Analyze token sequence statistics.
 
@@ -1012,8 +1044,7 @@ class DataPipeline:
             "min": int(np.min(lengths)),
             "max": int(np.max(lengths)),
             "percentiles": {
-                str(p): float(np.percentile(lengths, p))
-                for p in [0, 25, 50, 75, 90, 95, 99, 100]
+                str(p): float(np.percentile(lengths, p)) for p in [0, 25, 50, 75, 90, 95, 99, 100]
             },
             "truncated_count": int(np.sum(lengths >= 2048)),
             "truncated_ratio": float(np.mean(lengths >= 2048)),
@@ -1022,7 +1053,9 @@ class DataPipeline:
         logger.info(f"Sequence analysis: {stats}")
         return stats
 
-    def compute_statistics(self, dataset: Dataset, dataset_name: str = "dataset") -> DatasetStatistics:
+    def compute_statistics(
+        self, dataset: Dataset, dataset_name: str = "dataset"
+    ) -> DatasetStatistics:
         """
         Compute comprehensive dataset statistics.
 
@@ -1075,7 +1108,9 @@ class DataPipeline:
 
         for col in dataset.column_names:
             null_count = sum(1 for ex in sample if ex[col] is None)
-            empty_count = sum(1 for ex in sample if isinstance(ex[col], str) and not ex[col].strip())
+            empty_count = sum(
+                1 for ex in sample if isinstance(ex[col], str) and not ex[col].strip()
+            )
             if null_count > 0:
                 self.statistics.null_counts[col] = null_count
             if empty_count > 0:
@@ -1144,13 +1179,18 @@ class DataPipeline:
         if method == "random":
             train_ds = dataset.select(range(train_size))
             val_ds = dataset.select(range(train_size, train_size + val_size))
-            test_ds = dataset.select(range(train_size + val_size, train_size + val_size + test_size))
+            test_ds = dataset.select(
+                range(train_size + val_size, train_size + val_size + test_size)
+            )
         elif method == "sequential":
             train_ds = dataset.select(range(train_size))
             val_ds = dataset.select(range(train_size, train_size + val_size))
-            test_ds = dataset.select(range(train_size + val_size, train_size + val_size + test_size))
+            test_ds = dataset.select(
+                range(train_size + val_size, train_size + val_size + test_size)
+            )
         elif method == "stratified" and stratify_by and stratify_by in dataset.column_names:
             from sklearn.model_selection import train_test_split
+
             indices = np.arange(len(dataset))
             labels = np.array(dataset[stratify_by])
 
@@ -1168,23 +1208,31 @@ class DataPipeline:
         else:
             train_ds = dataset.select(range(train_size))
             val_ds = dataset.select(range(train_size, train_size + val_size))
-            test_ds = dataset.select(range(train_size + val_size, train_size + val_size + test_size))
+            test_ds = dataset.select(
+                range(train_size + val_size, train_size + val_size + test_size)
+            )
 
-        logger.info(f"Split sizes - Train: {len(train_ds)}, Val: {len(val_ds)}, Test: {len(test_ds)}")
+        logger.info(
+            f"Split sizes - Train: {len(train_ds)}, Val: {len(val_ds)}, Test: {len(test_ds)}"
+        )
 
-        return DatasetDict({
-            "train": train_ds,
-            "validation": val_ds,
-            "test": test_ds,
-        })
+        return DatasetDict(
+            {
+                "train": train_ds,
+                "validation": val_ds,
+                "test": test_ds,
+            }
+        )
 
-    def export_jsonl(self, dataset: Dataset, output_path: Union[str, Path]):
+    def export_jsonl(self, dataset: Dataset, output_path: str | Path):
         """Export dataset to JSONL format."""
         logger.info(f"Exporting to JSONL: {output_path}")
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         dataset.to_json(str(output_path), lines=True, force_ascii=False)
 
-    def export_parquet(self, dataset: Dataset, output_path: Union[str, Path], compression: str = "snappy"):
+    def export_parquet(
+        self, dataset: Dataset, output_path: str | Path, compression: str = "snappy"
+    ):
         """Export dataset to Parquet format."""
         if not PARQUET_AVAILABLE:
             raise ImportError("pyarrow required for Parquet export")
@@ -1192,13 +1240,13 @@ class DataPipeline:
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         dataset.to_parquet(str(output_path))
 
-    def export_arrow(self, dataset: Dataset, output_path: Union[str, Path]):
+    def export_arrow(self, dataset: Dataset, output_path: str | Path):
         """Export dataset to Arrow format."""
         logger.info(f"Exporting to Arrow: {output_path}")
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         dataset.save_to_disk(str(output_path))
 
-    def export_dataset(self, dataset: Dataset, base_path: Union[str, Path], formats: List[str] = None):
+    def export_dataset(self, dataset: Dataset, base_path: str | Path, formats: list[str] = None):
         """
         Export dataset to multiple formats.
 
@@ -1225,7 +1273,7 @@ class DataPipeline:
             else:
                 logger.warning(f"Unknown export format: {fmt}")
 
-    def process(self, dataset_name: Optional[str] = None) -> DatasetDict:
+    def process(self, dataset_name: str | None = None) -> DatasetDict:
         """
         Run the complete data processing pipeline.
 
@@ -1243,7 +1291,9 @@ class DataPipeline:
 
         if dataset_name:
             if dataset_name not in datasets:
-                raise ValueError(f"Dataset {dataset_name} not found. Available: {list(datasets.keys())}")
+                raise ValueError(
+                    f"Dataset {dataset_name} not found. Available: {list(datasets.keys())}"
+                )
             datasets = {dataset_name: datasets[dataset_name]}
 
         processed_datasets = {}
@@ -1299,28 +1349,32 @@ def create_argument_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--config", "-c",
+        "--config",
+        "-c",
         type=str,
         default="configs/data.yaml",
         help="Path to data configuration YAML file",
     )
 
     parser.add_argument(
-        "--dataset", "-d",
+        "--dataset",
+        "-d",
         type=str,
         default=None,
         help="Specific dataset to process (default: all)",
     )
 
     parser.add_argument(
-        "--output-dir", "-o",
+        "--output-dir",
+        "-o",
         type=str,
         default=None,
         help="Output directory (overrides config)",
     )
 
     parser.add_argument(
-        "--formats", "-f",
+        "--formats",
+        "-f",
         nargs="+",
         default=None,
         help="Export formats (jsonl, parquet, arrow)",
@@ -1374,7 +1428,8 @@ def create_argument_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="Verbose logging",
     )

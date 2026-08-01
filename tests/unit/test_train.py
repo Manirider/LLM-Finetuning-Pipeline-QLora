@@ -3,40 +3,38 @@
 Unit tests for Training Module
 """
 
-import json
-import os
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch, PropertyMock
+from unittest.mock import Mock, patch
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from src.train import (
-    TrainingMetrics,
-    GradientNormCallback,
-    GPUMemoryCallback,
-    LearningRateCallback,
-    ThroughputCallback,
-    ProfilerCallback,
-    EarlyStoppingCallback,
-    create_callbacks,
-    create_argument_parser,
-)
 from src.config import (
-    TrainingConfig,
-    TrainerConfig,
-    LoRAConfig,
-    QuantizationConfig,
     CallbacksConfig,
-    EarlyStoppingConfig,
     CheckpointConfig,
-    LoggingCallbackConfig,
-    ProfilerConfig,
-    RuntimeConfig,
+    EarlyStoppingConfig,
     ExperimentConfig,
+    LoggingCallbackConfig,
+    LoRAConfig,
+    ProfilerConfig,
+    QuantizationConfig,
+    RuntimeConfig,
+    TrainerConfig,
+    TrainingConfig,
+)
+from src.train import (
+    EarlyStoppingCallback,
+    GPUMemoryCallback,
+    GradientNormCallback,
+    LearningRateCallback,
+    ProfilerCallback,
+    ThroughputCallback,
+    TrainingMetrics,
+    create_argument_parser,
+    create_callbacks,
 )
 
 

@@ -17,15 +17,23 @@ from __future__ import annotations
 
 import gc
 import logging
-import os
-import warnings
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import torch
 import torch.nn as nn
+from peft import (
+    AdaLoraConfig,
+    IA3Config,
+    LoraConfig,
+    PeftConfig,
+    PeftModel,
+    TaskType,
+    get_peft_model,
+    prepare_model_for_kbit_training,
+)
 from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
@@ -33,8 +41,21 @@ from transformers import (
     BitsAndBytesConfig,
     PreTrainedModel,
     PreTrainedTokenizer,
-    PreTrainedTokenizerFast,
 )
+
+from src.config import (
+    AdaLoRAConfig,
+    LoRAConfig,
+    ModelConfig,
+    ModelLoadingConfig,
+    PEFTLoraConfig,
+    QuantizationConfig,
+    QuantizationConfigModel,
+    RuntimeConfig,
+    TokenizerConfig,
+    TrainingConfig,
+)
+
 
 # no_init_weights was removed in newer transformers, create a compatible version
 @contextmanager
@@ -42,30 +63,6 @@ def no_init_weights(_enable: bool = True):
     """Context manager to skip weight initialization (compatible with older transformers)."""
     yield
 
-from peft import (
-    LoraConfig,
-    PeftModel,
-    PeftConfig,
-    TaskType,
-    get_peft_model,
-    prepare_model_for_kbit_training,
-    AdaLoraConfig,
-    IA3Config,
-)
-from peft.tuners.lora import LoraLayer
-
-from src.config import (
-    ModelConfig,
-    TokenizerConfig,
-    PEFTLoraConfig,
-    AdaLoRAConfig,
-    QuantizationConfig,
-    QuantizationConfigModel,
-    ModelLoadingConfig,
-    RuntimeConfig,
-    LoRAConfig,
-    TrainingConfig,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -73,18 +70,20 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ModelLoadResult:
     """Result of model loading operation."""
+
     model: PreTrainedModel
     tokenizer: PreTrainedTokenizer
     model_config: AutoConfig
-    quantization_config: Optional[BitsAndBytesConfig]
-    peft_config: Optional[PeftConfig]
-    device_map: Dict[str, Any]
-    memory_stats: Dict[str, Any]
+    quantization_config: BitsAndBytesConfig | None
+    peft_config: PeftConfig | None
+    device_map: dict[str, Any]
+    memory_stats: dict[str, Any]
 
 
 @dataclass
 class ParameterStats:
     """Trainable parameter statistics."""
+
     total_params: int
     trainable_params: int
     frozen_params: int
@@ -107,7 +106,9 @@ def get_torch_dtype(dtype_str: str) -> torch.dtype:
     return dtype_map.get(dtype_str.lower(), torch.bfloat16)
 
 
-def create_bnb_config(quant_config: Union[QuantizationConfig, QuantizationConfigModel]) -> BitsAndBytesConfig:
+def create_bnb_config(
+    quant_config: QuantizationConfig | QuantizationConfigModel,
+) -> BitsAndBytesConfig:
     """
     Create BitsAndBytesConfig from configuration.
 
@@ -174,7 +175,7 @@ def create_bnb_config(quant_config: Union[QuantizationConfig, QuantizationConfig
         return None
 
 
-def create_lora_config(peft_config: Union[PEFTLoraConfig, LoRAConfig]) -> LoraConfig:
+def create_lora_config(peft_config: PEFTLoraConfig | LoRAConfig) -> LoraConfig:
     """Create PEFT LoRA config from configuration."""
     if isinstance(peft_config, PEFTLoraConfig):
         r = peft_config.r
@@ -193,8 +194,6 @@ def create_lora_config(peft_config: Union[PEFTLoraConfig, LoRAConfig]) -> LoraCo
         alpha_pattern = peft_config.alpha_pattern
         megatron_config = peft_config.megatron_config
         megatron_core = peft_config.megatron_core
-        lora_plus_scale = peft_config.lora_plus_scale
-        lora_plus_lr_ratio = peft_config.lora_plus_lr_ratio
     else:
         r = peft_config.r
         lora_alpha = peft_config.lora_alpha
@@ -206,14 +205,12 @@ def create_lora_config(peft_config: Union[PEFTLoraConfig, LoRAConfig]) -> LoraCo
         bias = peft_config.bias
         task_type = peft_config.task_type
         inference_mode = peft_config.inference_mode
-        layers_to_transform = getattr(peft_config, 'layers_to_transform', None)
-        layers_pattern = getattr(peft_config, 'layers_pattern', None)
-        rank_pattern = getattr(peft_config, 'rank_pattern', {})
-        alpha_pattern = getattr(peft_config, 'alpha_pattern', {})
+        layers_to_transform = getattr(peft_config, "layers_to_transform", None)
+        layers_pattern = getattr(peft_config, "layers_pattern", None)
+        rank_pattern = getattr(peft_config, "rank_pattern", {})
+        alpha_pattern = getattr(peft_config, "alpha_pattern", {})
         megatron_config = None
         megatron_core = False
-        lora_plus_scale = None
-        lora_plus_lr_ratio = None
 
     logger.info(
         f"Creating LoRA config: r={r}, alpha={lora_alpha}, dropout={lora_dropout}, "
@@ -268,14 +265,14 @@ def create_adalora_config(adalora_config: AdaLoRAConfig) -> AdaLoraConfig:
 def create_ia3_config(ia3_config: Any) -> IA3Config:
     """Create PEFT IA3 config from configuration."""
     logger.info(f"Creating IA3 config: target_modules={ia3_config.target_modules}")
-    
+
     target_modules = ia3_config.target_modules
     feedforward_modules = ia3_config.feedforward_modules
-    
+
     # Ensure feedforward_modules is a subset of target_modules
     if feedforward_modules:
         feedforward_modules = [m for m in feedforward_modules if m in target_modules]
-    
+
     return IA3Config(
         target_modules=target_modules,
         feedforward_modules=feedforward_modules,
@@ -383,7 +380,9 @@ def load_tokenizer(tokenizer_config: TokenizerConfig) -> PreTrainedTokenizer:
     return tokenizer
 
 
-def setup_flash_attention(model: PreTrainedModel, enable: bool = True, version: int = 2) -> PreTrainedModel:
+def setup_flash_attention(
+    model: PreTrainedModel, enable: bool = True, version: int = 2
+) -> PreTrainedModel:
     """
     Configure Flash Attention for the model.
 
@@ -392,10 +391,9 @@ def setup_flash_attention(model: PreTrainedModel, enable: bool = True, version: 
     - Flash Attention 3 (Hopper/H100)
     - Automatic fallback to eager attention
     """
-    FLASH_ATTN_AVAILABLE = False
     try:
         import flash_attn
-        FLASH_ATTN_AVAILABLE = True
+
         logger.info(f"Flash Attention {version} available: {flash_attn.__version__}")
     except ImportError:
         logger.warning("Flash Attention not installed, falling back to eager attention")
@@ -439,7 +437,9 @@ def setup_gradient_checkpointing(
         use_reentrant: Use reentrant checkpointing (False recommended for Flash Attention)
     """
     if enabled:
-        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": use_reentrant})
+        model.gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs={"use_reentrant": use_reentrant}
+        )
         model.config.use_cache = False
         logger.info(f"Gradient checkpointing enabled (use_reentrant={use_reentrant})")
     else:
@@ -451,7 +451,7 @@ def setup_gradient_checkpointing(
 def prepare_model_for_training(
     model: PreTrainedModel,
     use_gradient_checkpointing: bool = True,
-    gradient_checkpointing_kwargs: Optional[Dict[str, Any]] = None,
+    gradient_checkpointing_kwargs: dict[str, Any] | None = None,
 ) -> PreTrainedModel:
     """
     Prepare model for k-bit training (QLoRA).
@@ -483,7 +483,7 @@ def prepare_model_for_training(
 
 def apply_peft_model(
     model: PreTrainedModel,
-    peft_config: Union[PEFTLoraConfig, LoRAConfig, AdaLoRAConfig, Any],
+    peft_config: PEFTLoraConfig | LoRAConfig | AdaLoRAConfig | Any,
     peft_type: str = "LORA",
     adapter_name: str = "default",
 ) -> PeftModel:
@@ -548,9 +548,9 @@ def count_parameters(model: nn.Module, verbose: bool = True) -> ParameterStats:
     if verbose:
         logger.info(
             f"Parameter Statistics:\n"
-            f"  Total:     {total_params:,} ({total_params/1e9:.2f}B)\n"
+            f"  Total:     {total_params:,} ({total_params / 1e9:.2f}B)\n"
             f"  Trainable: {trainable_params:,} ({trainable_percent:.2f}%)\n"
-            f"  Frozen:    {frozen_params:,} ({100-trainable_percent:.2f}%)\n"
+            f"  Frozen:    {frozen_params:,} ({100 - trainable_percent:.2f}%)\n"
             f"  LoRA:      {lora_params:,} ({lora_percent:.2f}%)"
         )
 
@@ -562,7 +562,7 @@ def print_trainable_parameters(model: nn.Module) -> ParameterStats:
     return count_parameters(model, verbose=True)
 
 
-def get_model_memory_footprint(model: nn.Module) -> Dict[str, Any]:
+def get_model_memory_footprint(model: nn.Module) -> dict[str, Any]:
     """Get detailed memory footprint of model."""
     param_mem = 0
     buffer_mem = 0
@@ -590,7 +590,7 @@ def optimize_model_memory(
     enable_flash_attention: bool = True,
     flash_attention_version: int = 2,
     gradient_checkpointing: bool = True,
-    gradient_checkpointing_kwargs: Optional[Dict[str, Any]] = None,
+    gradient_checkpointing_kwargs: dict[str, Any] | None = None,
     empty_cache_steps: int = 50,
     gc_collect_steps: int = 100,
 ) -> PreTrainedModel:
@@ -610,29 +610,32 @@ def optimize_model_memory(
         model = setup_gradient_checkpointing(model, True, **gc_kwargs)
 
     if empty_cache_steps > 0 or gc_collect_steps > 0:
+
         def clear_cache_hook(module, args, output):
-            if empty_cache_steps > 0 and hasattr(module, '_step_counter'):
+            if empty_cache_steps > 0 and hasattr(module, "_step_counter"):
                 module._step_counter += 1
                 if module._step_counter % empty_cache_steps == 0:
                     torch.cuda.empty_cache()
-            if gc_collect_steps > 0 and hasattr(module, '_step_counter'):
+            if gc_collect_steps > 0 and hasattr(module, "_step_counter"):
                 if module._step_counter % gc_collect_steps == 0:
                     gc.collect()
 
         model._step_counter = 0
         model.register_forward_hook(clear_cache_hook)
-        logger.info(f"Registered cache clearing hook (every {empty_cache_steps} steps) "
-                    f"and GC hook (every {gc_collect_steps} steps)")
+        logger.info(
+            f"Registered cache clearing hook (every {empty_cache_steps} steps) "
+            f"and GC hook (every {gc_collect_steps} steps)"
+        )
 
     return model
 
 
 def create_device_map(
     model: PreTrainedModel,
-    max_memory: Optional[Dict[str, str]] = None,
+    max_memory: dict[str, str] | None = None,
     device_map: str = "auto",
     low_cpu_mem_usage: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Create and validate device map for model.
 
@@ -644,25 +647,32 @@ def create_device_map(
     """
     if device_map == "auto":
         from accelerate import infer_auto_device_map
+
         if max_memory is None:
             max_memory = get_balanced_memory(model)
         device_map = infer_auto_device_map(model, max_memory=max_memory)
         logger.info(f"Auto device map: {device_map}")
     elif device_map == "balanced":
         from accelerate import infer_auto_device_map
+
         if max_memory is None:
             max_memory = get_balanced_memory(model)
-        device_map = infer_auto_device_map(model, max_memory=max_memory, no_split_module_classes=model._no_split_modules)
+        device_map = infer_auto_device_map(
+            model, max_memory=max_memory, no_split_module_classes=model._no_split_modules
+        )
     elif device_map == "sequential":
         from accelerate import infer_auto_device_map
+
         if max_memory is None:
             max_memory = get_balanced_memory(model)
-        device_map = infer_auto_device_map(model, max_memory=max_memory, no_split_module_classes=model._no_split_modules)
+        device_map = infer_auto_device_map(
+            model, max_memory=max_memory, no_split_module_classes=model._no_split_modules
+        )
 
     return device_map
 
 
-def get_balanced_memory(model: PreTrainedModel) -> Dict[str, str]:
+def get_balanced_memory(model: PreTrainedModel) -> dict[str, str]:
     """Get balanced memory allocation for all available devices."""
     if not torch.cuda.is_available():
         return {}
@@ -689,7 +699,9 @@ def load_model_config(model_config: ModelConfig) -> AutoConfig:
     )
 
     config.use_cache = model_config.use_cache
-    config.gradient_checkpointing = model_config.gradient_checkpointing if model_config.gradient_checkpointing else False
+    config.gradient_checkpointing = (
+        model_config.gradient_checkpointing if model_config.gradient_checkpointing else False
+    )
 
     if model_config.gradient_checkpointing:
         config.gradient_checkpointing_kwargs = model_config.gradient_checkpointing_kwargs
@@ -699,11 +711,11 @@ def load_model_config(model_config: ModelConfig) -> AutoConfig:
 
 def load_base_model(
     model_config: ModelConfig,
-    quantization_config: Optional[BitsAndBytesConfig] = None,
-    device_map: Optional[Union[str, Dict]] = None,
-    torch_dtype: Optional[torch.dtype] = None,
+    quantization_config: BitsAndBytesConfig | None = None,
+    device_map: str | dict | None = None,
+    torch_dtype: torch.dtype | None = None,
     low_cpu_mem_usage: bool = True,
-    attn_implementation: Optional[str] = None,
+    attn_implementation: str | None = None,
 ) -> PreTrainedModel:
     """
     Load base model with quantization and device mapping.
@@ -758,11 +770,11 @@ def load_base_model(
 def load_model_and_tokenizer(
     model_config: ModelConfig,
     tokenizer_config: TokenizerConfig,
-    quantization_config: Optional[Union[QuantizationConfig, QuantizationConfigModel]] = None,
-    peft_config: Optional[Union[PEFTLoraConfig, LoRAConfig]] = None,
+    quantization_config: QuantizationConfig | QuantizationConfigModel | None = None,
+    peft_config: PEFTLoraConfig | LoRAConfig | None = None,
     peft_type: str = "LORA",
-    loading_config: Optional[ModelLoadingConfig] = None,
-    runtime_config: Optional[RuntimeConfig] = None,
+    loading_config: ModelLoadingConfig | None = None,
+    runtime_config: RuntimeConfig | None = None,
 ) -> ModelLoadResult:
     """
     Complete model and tokenizer loading pipeline.
@@ -782,7 +794,11 @@ def load_model_and_tokenizer(
         runtime_config = RuntimeConfig()
 
     if quantization_config is None:
-        quantization_config = model_config.quantization_config if hasattr(model_config, 'quantization_config') else QuantizationConfig()
+        quantization_config = (
+            model_config.quantization_config
+            if hasattr(model_config, "quantization_config")
+            else QuantizationConfig()
+        )
 
     logger.info("=" * 60)
     logger.info("Loading Model and Tokenizer")
@@ -811,7 +827,12 @@ def load_model_and_tokenizer(
         model = setup_gradient_checkpointing(
             model,
             True,
-            use_reentrant=model_config.gradient_checkpointing_kwargs.get("use_reentrant", False) if hasattr(model_config, "gradient_checkpointing_kwargs") and isinstance(model_config.gradient_checkpointing_kwargs, dict) else False,
+            use_reentrant=(
+                model_config.gradient_checkpointing_kwargs.get("use_reentrant", False)
+                if hasattr(model_config, "gradient_checkpointing_kwargs")
+                and isinstance(model_config.gradient_checkpointing_kwargs, dict)
+                else False
+            ),
         )
 
     if peft_config is not None:
@@ -833,7 +854,9 @@ def load_model_and_tokenizer(
     logger.info(f"Model memory footprint: {memory_stats['total_memory_gb']:.2f} GB")
 
     param_stats = count_parameters(model)
-    logger.info(f"Trainable params: {param_stats.trainable_params:,} ({param_stats.trainable_percent:.2f}%)")
+    logger.info(
+        f"Trainable params: {param_stats.trainable_params:,} ({param_stats.trainable_percent:.2f}%)"
+    )
 
     return ModelLoadResult(
         model=model,
@@ -841,7 +864,7 @@ def load_model_and_tokenizer(
         model_config=model_config_obj,
         quantization_config=bnb_config,
         peft_config=peft_config,
-        device_map=getattr(model, 'hf_device_map', {}),
+        device_map=getattr(model, "hf_device_map", {}),
         memory_stats=memory_stats,
     )
 
@@ -857,7 +880,7 @@ def merge_and_unload_peft(model: PeftModel) -> PreTrainedModel:
 def save_model_and_tokenizer(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizer,
-    output_dir: Union[str, Path],
+    output_dir: str | Path,
     save_adapter: bool = True,
     save_tokenizer: bool = True,
     merge_and_unload: bool = False,
@@ -867,7 +890,7 @@ def save_model_and_tokenizer(
     push_to_hub: bool = False,
     hub_model_id: str = "",
     hub_private_repo: bool = False,
-    hub_token: Optional[str] = None,
+    hub_token: str | None = None,
     commit_message: str = "Upload model",
 ) -> None:
     """
@@ -930,7 +953,7 @@ def save_model_and_tokenizer(
 
 def load_peft_adapter(
     model: PreTrainedModel,
-    adapter_path: Union[str, Path],
+    adapter_path: str | Path,
     adapter_name: str = "default",
     is_trainable: bool = True,
 ) -> PeftModel:
@@ -969,7 +992,7 @@ def enable_adapter(model: PeftModel) -> PeftModel:
 @contextmanager
 def model_loading_context(
     low_cpu_mem_usage: bool = True,
-    torch_dtype: Optional[torch.dtype] = None,
+    torch_dtype: torch.dtype | None = None,
 ):
     """Context manager for memory-efficient model loading."""
     old_init = nn.Module.__init__
@@ -988,7 +1011,7 @@ def model_loading_context(
         nn.Module.__init__ = old_init
 
 
-def get_gpu_memory_info() -> Dict[str, Any]:
+def get_gpu_memory_info() -> dict[str, Any]:
     """Get detailed GPU memory information."""
     if not torch.cuda.is_available():
         return {"cuda_available": False}
@@ -1000,15 +1023,17 @@ def get_gpu_memory_info() -> Dict[str, Any]:
         reserved = torch.cuda.memory_reserved(i)
         free = props.total_memory - reserved
 
-        info["devices"].append({
-            "index": i,
-            "name": props.name,
-            "total_memory_gb": props.total_memory / 1e9,
-            "allocated_gb": allocated / 1e9,
-            "reserved_gb": reserved / 1e9,
-            "free_gb": free / 1e9,
-            "utilization_percent": (reserved / props.total_memory) * 100,
-        })
+        info["devices"].append(
+            {
+                "index": i,
+                "name": props.name,
+                "total_memory_gb": props.total_memory / 1e9,
+                "allocated_gb": allocated / 1e9,
+                "reserved_gb": reserved / 1e9,
+                "free_gb": free / 1e9,
+                "utilization_percent": (reserved / props.total_memory) * 100,
+            }
+        )
     return info
 
 
@@ -1039,7 +1064,7 @@ def estimate_model_memory(
     model_name: str,
     quantization: str = "4bit",
     dtype: str = "bfloat16",
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """
     Estimate model memory requirements before loading.
 
@@ -1056,9 +1081,9 @@ def estimate_model_memory(
     hidden_size = config.hidden_size
     num_layers = config.num_hidden_layers
     vocab_size = config.vocab_size
-    intermediate_size = getattr(config, 'intermediate_size', hidden_size * 4)
+    intermediate_size = getattr(config, "intermediate_size", hidden_size * 4)
     num_heads = config.num_attention_heads
-    num_kv_heads = getattr(config, 'num_key_value_heads', num_heads)
+    num_kv_heads = getattr(config, "num_key_value_heads", num_heads)
 
     param_count = 0
     param_count += vocab_size * hidden_size
@@ -1068,7 +1093,9 @@ def estimate_model_memory(
     param_count += num_layers * hidden_size * 2
     param_count += hidden_size
 
-    bytes_per_param = {"float32": 4, "float16": 2, "bfloat16": 2, "4bit": 0.5, "8bit": 1}.get(dtype, 2)
+    bytes_per_param = {"float32": 4, "float16": 2, "bfloat16": 2, "4bit": 0.5, "8bit": 1}.get(
+        dtype, 2
+    )
     if quantization == "4bit":
         bytes_per_param = 0.5
     elif quantization == "8bit":
@@ -1090,7 +1117,7 @@ def estimate_model_memory(
     }
 
 
-def print_model_summary(model: PreTrainedModel, input_shape: Optional[Tuple] = None) -> None:
+def print_model_summary(model: PreTrainedModel, input_shape: tuple | None = None) -> None:
     """Print comprehensive model summary."""
     lines = [
         "=" * 60,
@@ -1101,11 +1128,13 @@ def print_model_summary(model: PreTrainedModel, input_shape: Optional[Tuple] = N
     ]
 
     param_stats = count_parameters(model, verbose=False)
-    lines.extend([
-        f"Total Parameters: {param_stats.total_params:,} ({param_stats.total_params/1e9:.2f}B)",
-        f"Trainable Parameters: {param_stats.trainable_params:,} ({param_stats.trainable_percent:.2f}%)",
-        f"LoRA Parameters: {param_stats.lora_params:,} ({param_stats.lora_percent:.2f}%)",
-    ])
+    lines.extend(
+        [
+            f"Total Parameters: {param_stats.total_params:,} ({param_stats.total_params / 1e9:.2f}B)",
+            f"Trainable Parameters: {param_stats.trainable_params:,} ({param_stats.trainable_percent:.2f}%)",
+            f"LoRA Parameters: {param_stats.lora_params:,} ({param_stats.lora_percent:.2f}%)",
+        ]
+    )
 
     mem_stats = get_model_memory_footprint(model)
     lines.append(f"Model Memory: {mem_stats['total_memory_gb']:.2f} GB")
@@ -1116,28 +1145,30 @@ def print_model_summary(model: PreTrainedModel, input_shape: Optional[Tuple] = N
     lines.append("=" * 60)
     summary_text = "\n".join(lines)
     logger.info(summary_text)
-    print(summary_text)
 
 
-def get_layer_info(model: PreTrainedModel) -> List[Dict[str, Any]]:
+def get_layer_info(model: PreTrainedModel) -> list[dict[str, Any]]:
     """Get information about model layers."""
     layers = []
     for name, module in model.named_modules():
         if len(list(module.children())) == 0:
             param_count = sum(p.numel() for p in module.parameters())
             trainable = any(p.requires_grad for p in module.parameters())
-            layers.append({
-                "name": name,
-                "type": module.__class__.__name__,
-                "parameters": param_count,
-                "trainable": trainable,
-            })
+            layers.append(
+                {
+                    "name": name,
+                    "type": module.__class__.__name__,
+                    "parameters": param_count,
+                    "trainable": trainable,
+                }
+            )
     return layers
 
 
 def freeze_layers(model: PreTrainedModel, layer_pattern: str) -> PreTrainedModel:
     """Freeze layers matching pattern."""
     import re
+
     pattern = re.compile(layer_pattern)
     frozen = 0
     for name, param in model.named_parameters():
@@ -1151,6 +1182,7 @@ def freeze_layers(model: PreTrainedModel, layer_pattern: str) -> PreTrainedModel
 def unfreeze_layers(model: PreTrainedModel, layer_pattern: str) -> PreTrainedModel:
     """Unfreeze layers matching pattern."""
     import re
+
     pattern = re.compile(layer_pattern)
     unfrozen = 0
     for name, param in model.named_parameters():
@@ -1161,16 +1193,16 @@ def unfreeze_layers(model: PreTrainedModel, layer_pattern: str) -> PreTrainedMod
     return model
 
 
-def get_model_device_map(model: PreTrainedModel) -> Dict[str, Any]:
+def get_model_device_map(model: PreTrainedModel) -> dict[str, Any]:
     """Get device map of model."""
-    if hasattr(model, 'hf_device_map'):
+    if hasattr(model, "hf_device_map"):
         return model.hf_device_map
     return {"": str(next(model.parameters()).device)}
 
 
-def move_model_to_device(model: PreTrainedModel, device: Union[str, torch.device]) -> PreTrainedModel:
+def move_model_to_device(model: PreTrainedModel, device: str | torch.device) -> PreTrainedModel:
     """Move model to device (handles device_map)."""
-    if hasattr(model, 'hf_device_map') and model.hf_device_map:
+    if hasattr(model, "hf_device_map") and model.hf_device_map:
         logger.warning("Model has device_map, skipping manual device move")
         return model
     return model.to(device)
@@ -1195,7 +1227,7 @@ def verify_model_setup(model: PreTrainedModel) -> bool:
     if not any(p.requires_grad for p in model.parameters()):
         issues.append("No trainable parameters found")
 
-    if hasattr(model, 'hf_device_map'):
+    if hasattr(model, "hf_device_map"):
         devices = set(model.hf_device_map.values())
         if len(devices) > 1:
             logger.info(f"Model sharded across devices: {devices}")
@@ -1247,20 +1279,22 @@ def apply_lora_plus_scaling(model: PeftModel, scale: float, lr_ratio: float) -> 
 
 def enable_dora(model: PeftModel) -> PeftModel:
     """Enable DoRA (Weight-Decomposed Low-Rank Adaptation) on existing LoRA model."""
-    if not hasattr(model, 'peft_config'):
+    if not hasattr(model, "peft_config"):
         raise ValueError("Model is not a PEFT model")
-    for adapter_name, config in model.peft_config.items():
+    for _adapter_name, config in model.peft_config.items():
         config.use_dora = True
     logger.info("DoRA enabled on all adapters")
     return model
 
 
-def get_peft_state_dict(model: PeftModel, adapter_name: str = "default") -> Dict[str, torch.Tensor]:
+def get_peft_state_dict(model: PeftModel, adapter_name: str = "default") -> dict[str, torch.Tensor]:
     """Get PEFT adapter state dict."""
     return model.get_peft_state_dict(adapter_name)
 
 
-def set_peft_state_dict(model: PeftModel, state_dict: Dict[str, torch.Tensor], adapter_name: str = "default") -> PeftModel:
+def set_peft_state_dict(
+    model: PeftModel, state_dict: dict[str, torch.Tensor], adapter_name: str = "default"
+) -> PeftModel:
     """Set PEFT adapter state dict."""
     return model.set_peft_state_dict(state_dict, adapter_name)
 
@@ -1312,4 +1346,3 @@ __all__ = [
     "get_peft_state_dict",
     "set_peft_state_dict",
 ]
-

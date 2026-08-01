@@ -1,8 +1,6 @@
 """Unit tests for src/inference.py."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from src.inference import ModelInstance, ModelStatus
 

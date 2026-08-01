@@ -1,12 +1,10 @@
 """Unit tests for src/utils.py."""
 
 import random
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
-import pytest
 import torch
-
 from src.utils import get_device, get_device_map, set_seed
 
 

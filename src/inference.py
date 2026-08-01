@@ -13,22 +13,23 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import time
 import uuid
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
-from typing import Any, AsyncGenerator, Dict, List, Optional, Union
-
-from pydantic import BaseModel, Field
+from typing import Any
+from unittest.mock import MagicMock
 
 import torch
+from pydantic import BaseModel
+
 try:
     from fastapi import FastAPI, HTTPException, Request
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import Response, StreamingResponse
+
     FASTAPI_AVAILABLE = True
 except ImportError:
     FASTAPI_AVAILABLE = False
@@ -41,17 +42,22 @@ except ImportError:
 
 try:
     from prometheus_client import Counter, Gauge, Histogram, generate_latest
+
     PROMETHEUS_AVAILABLE = True
 except ImportError:
     PROMETHEUS_AVAILABLE = False
-    Counter = Gauge = Histogram = MagicMock if 'MagicMock' in globals() else None
-    generate_latest = lambda: b""
-from transformers import AutoModelForCausalLM, AutoTokenizer, TextIteratorStreamer
-from transformers.generation import GenerationConfig
+    Counter = Gauge = Histogram = MagicMock if "MagicMock" in globals() else None
 
-from src.config import InferenceConfig, GenerationConfig as ConfigGenerationConfig
-from src.model_utils import load_model_and_tokenizer, merge_and_unload_peft
+    def generate_latest():
+        return b""
+
+
+from transformers import TextIteratorStreamer
+
+from src.config import GenerationConfig as ConfigGenerationConfig
+from src.config import InferenceConfig
 from src.logger import get_logger
+from src.model_utils import load_model_and_tokenizer
 
 logger = get_logger(__name__)
 
@@ -66,11 +72,12 @@ class ModelStatus(str, Enum):
 @dataclass
 class ModelInstance:
     """Wrapper for model and tokenizer with metadata."""
+
     model: torch.nn.Module
     tokenizer: Any
     config: InferenceConfig
     status: ModelStatus = ModelStatus.UNLOADED
-    loaded_at: Optional[float] = None
+    loaded_at: float | None = None
     request_count: int = 0
     total_tokens_generated: int = 0
     last_used: float = 0.0
@@ -81,10 +88,10 @@ class InferenceEngine:
 
     def __init__(self, config: InferenceConfig):
         self.config = config
-        self.model_instance: Optional[ModelInstance] = None
+        self.model_instance: ModelInstance | None = None
         self._generation_lock = asyncio.Lock()
         self._request_queue: asyncio.Queue = asyncio.Queue(maxsize=config.max_queue_size)
-        
+
         # Prometheus metrics
         self._setup_metrics()
 
@@ -92,37 +99,21 @@ class InferenceEngine:
         if not PROMETHEUS_AVAILABLE:
             return
         self.requests_total = Counter(
-            "inference_requests_total",
-            "Total inference requests",
-            ["model", "status"]
+            "inference_requests_total", "Total inference requests", ["model", "status"]
         )
         self.request_duration = Histogram(
-            "inference_request_duration_seconds",
-            "Request duration",
-            ["model", "endpoint"]
+            "inference_request_duration_seconds", "Request duration", ["model", "endpoint"]
         )
         self.tokens_generated = Counter(
-            "inference_tokens_generated_total",
-            "Total tokens generated",
-            ["model"]
+            "inference_tokens_generated_total", "Total tokens generated", ["model"]
         )
         self.active_requests = Gauge(
-            "inference_active_requests",
-            "Currently processing requests",
-            ["model"]
+            "inference_active_requests", "Currently processing requests", ["model"]
         )
-        self.queue_size = Gauge(
-            "inference_queue_size",
-            "Request queue size",
-            ["model"]
-        )
-        self.gpu_memory = Gauge(
-            "inference_gpu_memory_gb",
-            "GPU memory usage",
-            ["model", "device"]
-        )
+        self.queue_size = Gauge("inference_queue_size", "Request queue size", ["model"])
+        self.gpu_memory = Gauge("inference_gpu_memory_gb", "GPU memory usage", ["model", "device"])
 
-    async def load_model(self, config: Optional[InferenceConfig] = None) -> ModelInstance:
+    async def load_model(self, config: InferenceConfig | None = None) -> ModelInstance:
         """Load model and tokenizer."""
         config = config or self.config
         logger.info(f"Loading model: {config.model_path}")
@@ -158,7 +149,9 @@ class InferenceEngine:
             self.model_instance.status = ModelStatus.READY
             self.model_instance.loaded_at = time.time()
 
-            logger.info(f"Model loaded successfully in {time.time() - self.model_instance.loaded_at:.2f}s")
+            logger.info(
+                f"Model loaded successfully in {time.time() - self.model_instance.loaded_at:.2f}s"
+            )
             return self.model_instance
 
         except Exception as e:
@@ -179,9 +172,9 @@ class InferenceEngine:
     async def generate(
         self,
         prompt: str,
-        generation_config: Optional[ConfigGenerationConfig] = None,
+        generation_config: ConfigGenerationConfig | None = None,
         stream: bool = False,
-    ) -> Union[str, AsyncGenerator[str, None]]:
+    ) -> str | AsyncGenerator[str, None]:
         """Generate text from prompt."""
         if not self.model_instance or self.model_instance.status != ModelStatus.READY:
             raise RuntimeError("Model not loaded or not ready")
@@ -206,20 +199,19 @@ class InferenceEngine:
                 if stream:
                     return self._stream_generate(inputs, gen_config, start_time, input_length)
                 else:
-                    return await self._generate_complete(inputs, gen_config, start_time, input_length)
+                    return await self._generate_complete(
+                        inputs, gen_config, start_time, input_length
+                    )
 
-            except Exception as e:
-                self.requests_total.labels(
-                    model=self.config.model_path,
-                    status="error"
-                ).inc()
+            except Exception:
+                self.requests_total.labels(model=self.config.model_path, status="error").inc()
                 raise
             finally:
                 self.active_requests.labels(model=self.config.model_path).dec()
 
     async def _generate_complete(
         self,
-        inputs: Dict[str, torch.Tensor],
+        inputs: dict[str, torch.Tensor],
         gen_config: ConfigGenerationConfig,
         start_time: float,
         input_length: int,
@@ -245,7 +237,7 @@ class InferenceEngine:
 
     async def _stream_generate(
         self,
-        inputs: Dict[str, torch.Tensor],
+        inputs: dict[str, torch.Tensor],
         gen_config: ConfigGenerationConfig,
         start_time: float,
         input_length: int,
@@ -268,8 +260,7 @@ class InferenceEngine:
         # Run generation in thread pool to avoid blocking
         loop = asyncio.get_event_loop()
         task = loop.run_in_executor(
-            None,
-            lambda: self.model_instance.model.generate(**generation_kwargs)
+            None, lambda: self.model_instance.model.generate(**generation_kwargs)
         )
 
         total_tokens = 0
@@ -302,17 +293,13 @@ class InferenceEngine:
     def _record_metrics(self, start_time: float, tokens_generated: int) -> None:
         """Record generation metrics."""
         duration = time.time() - start_time
-        self.request_duration.labels(
-            model=self.config.model_path,
-            endpoint="generate"
-        ).observe(duration)
+        self.request_duration.labels(model=self.config.model_path, endpoint="generate").observe(
+            duration
+        )
         self.tokens_generated.labels(model=self.config.model_path).inc(tokens_generated)
-        self.requests_total.labels(
-            model=self.config.model_path,
-            status="success"
-        ).inc()
+        self.requests_total.labels(model=self.config.model_path, status="success").inc()
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get engine status."""
         if not self.model_instance:
             return {"status": "unloaded"}
@@ -324,8 +311,12 @@ class InferenceEngine:
             "request_count": self.model_instance.request_count,
             "total_tokens_generated": self.model_instance.total_tokens_generated,
             "last_used": self.model_instance.last_used,
-            "gpu_memory_allocated": torch.cuda.memory_allocated() / 1e9 if torch.cuda.is_available() else 0,
-            "gpu_memory_reserved": torch.cuda.memory_reserved() / 1e9 if torch.cuda.is_available() else 0,
+            "gpu_memory_allocated": (
+                torch.cuda.memory_allocated() / 1e9 if torch.cuda.is_available() else 0
+            ),
+            "gpu_memory_reserved": (
+                torch.cuda.memory_reserved() / 1e9 if torch.cuda.is_available() else 0
+            ),
         }
 
 
@@ -342,14 +333,14 @@ class ChatCompletionEngine(InferenceEngine):
 
     def apply_chat_template(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         template_name: str = "default",
     ) -> str:
         """Apply chat template to messages."""
         if template_name in self._chat_templates:
-            template = self._chat_templates[template_name]
+            self._chat_templates[template_name]
         else:
-            template = self._get_default_template()
+            self._get_default_template()
 
         return self.model_instance.tokenizer.apply_chat_template(
             messages,
@@ -368,10 +359,10 @@ class ChatCompletionEngine(InferenceEngine):
 
     async def chat_completion(
         self,
-        messages: List[Dict[str, str]],
-        generation_config: Optional[ConfigGenerationConfig] = None,
+        messages: list[dict[str, str]],
+        generation_config: ConfigGenerationConfig | None = None,
         stream: bool = False,
-    ) -> Union[Dict[str, Any], AsyncGenerator[Dict[str, Any], None]]:
+    ) -> dict[str, Any] | AsyncGenerator[dict[str, Any], None]:
         """OpenAI-compatible chat completion."""
         prompt = self.apply_chat_template(messages)
 
@@ -383,10 +374,10 @@ class ChatCompletionEngine(InferenceEngine):
     async def _complete_chat_completion(
         self,
         prompt: str,
-        generation_config: Optional[ConfigGenerationConfig],
-    ) -> Dict[str, Any]:
+        generation_config: ConfigGenerationConfig | None,
+    ) -> dict[str, Any]:
         response = await self.generate(prompt, generation_config, stream=False)
-        
+
         prompt_tokens = 0
         completion_tokens = 0
         if self.model_instance and self.model_instance.tokenizer:
@@ -399,7 +390,7 @@ class ChatCompletionEngine(InferenceEngine):
         else:
             prompt_tokens = len(prompt.split())
             completion_tokens = len(response.split())
-        
+
         total_tokens = prompt_tokens + completion_tokens
 
         return {
@@ -407,14 +398,16 @@ class ChatCompletionEngine(InferenceEngine):
             "object": "chat.completion",
             "created": int(time.time()),
             "model": self.config.model_path,
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": response,
-                },
-                "finish_reason": "stop",
-            }],
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": response,
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
             "usage": {
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
@@ -425,8 +418,8 @@ class ChatCompletionEngine(InferenceEngine):
     async def _stream_chat_completion(
         self,
         prompt: str,
-        generation_config: Optional[ConfigGenerationConfig],
-    ) -> AsyncGenerator[Dict[str, Any], None]:
+        generation_config: ConfigGenerationConfig | None,
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """Stream chat completion chunks."""
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
         created = int(time.time())
@@ -437,11 +430,13 @@ class ChatCompletionEngine(InferenceEngine):
             "object": "chat.completion.chunk",
             "created": created,
             "model": self.config.model_path,
-            "choices": [{
-                "index": 0,
-                "delta": {"role": "assistant"},
-                "finish_reason": None,
-            }],
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"role": "assistant"},
+                    "finish_reason": None,
+                }
+            ],
         }
 
         async for token in self.generate(prompt, generation_config, stream=True):
@@ -450,11 +445,13 @@ class ChatCompletionEngine(InferenceEngine):
                 "object": "chat.completion.chunk",
                 "created": created,
                 "model": self.config.model_path,
-                "choices": [{
-                    "index": 0,
-                    "delta": {"content": token},
-                    "finish_reason": None,
-                }],
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {"content": token},
+                        "finish_reason": None,
+                    }
+                ],
             }
 
         # Final chunk
@@ -463,11 +460,13 @@ class ChatCompletionEngine(InferenceEngine):
             "object": "chat.completion.chunk",
             "created": created,
             "model": self.config.model_path,
-            "choices": [{
-                "index": 0,
-                "delta": {},
-                "finish_reason": "stop",
-            }],
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {},
+                    "finish_reason": "stop",
+                }
+            ],
         }
 
 
@@ -509,12 +508,14 @@ class InferenceServer:
         async def list_models():
             return {
                 "object": "list",
-                "data": [{
-                    "id": self.config.model_path,
-                    "object": "model",
-                    "created": int(time.time()),
-                    "owned_by": "user",
-                }],
+                "data": [
+                    {
+                        "id": self.config.model_path,
+                        "object": "model",
+                        "created": int(time.time()),
+                        "owned_by": "user",
+                    }
+                ],
             }
 
         @app.post("/v1/completions")
@@ -539,7 +540,7 @@ class InferenceServer:
         logger.info("Shutting down inference server...")
         await self.engine.unload_model()
 
-    async def _handle_completion(self, request: CompletionRequest) -> Union[Dict, StreamingResponse]:
+    async def _handle_completion(self, request: CompletionRequest) -> dict | StreamingResponse:
         gen_config = ConfigGenerationConfig(
             max_new_tokens=request.max_tokens,
             temperature=request.temperature,
@@ -551,6 +552,7 @@ class InferenceServer:
         )
 
         if request.stream:
+
             async def stream_generator():
                 async for token in self.engine.generate(
                     request.prompt,
@@ -571,16 +573,20 @@ class InferenceServer:
                 "object": "text_completion",
                 "created": int(time.time()),
                 "model": self.config.model_path,
-                "choices": [{
-                    "text": response,
-                    "index": 0,
-                    "logprobs": None,
-                    "finish_reason": "stop",
-                }],
+                "choices": [
+                    {
+                        "text": response,
+                        "index": 0,
+                        "logprobs": None,
+                        "finish_reason": "stop",
+                    }
+                ],
                 "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
             }
 
-    async def _handle_chat_completion(self, request: ChatCompletionRequest) -> Union[Dict, StreamingResponse]:
+    async def _handle_chat_completion(
+        self, request: ChatCompletionRequest
+    ) -> dict | StreamingResponse:
         messages = [{"role": m.role, "content": m.content} for m in request.messages]
         gen_config = ConfigGenerationConfig(
             max_new_tokens=request.max_tokens,
@@ -593,6 +599,7 @@ class InferenceServer:
         )
 
         if request.stream:
+
             async def stream_generator():
                 async for chunk in self.engine.chat_completion(messages, gen_config, stream=True):
                     yield f"data: {json.dumps(chunk)}\n\n"
@@ -605,7 +612,7 @@ class InferenceServer:
         else:
             return await self.engine.chat_completion(messages, gen_config)
 
-    async def _handle_generate(self, request: GenerateRequest) -> Dict[str, Any]:
+    async def _handle_generate(self, request: GenerateRequest) -> dict[str, Any]:
         gen_config = ConfigGenerationConfig(
             max_new_tokens=request.max_new_tokens,
             temperature=request.temperature,
@@ -617,6 +624,7 @@ class InferenceServer:
         )
 
         if request.stream:
+
             async def stream_generator():
                 async for token in self.engine.generate(
                     request.prompt,
@@ -652,7 +660,7 @@ class ChatMessage(BaseModel):
 
 
 class ChatCompletionRequest(BaseModel):
-    messages: List[ChatMessage]
+    messages: list[ChatMessage]
     max_tokens: int = 512
     temperature: float = 0.7
     top_p: float = 0.9
@@ -682,6 +690,7 @@ def create_inference_server(config: InferenceConfig) -> FastAPI:
 def run_server(config: InferenceConfig, host: str = "0.0.0.0", port: int = 8000) -> None:
     """Run inference server with uvicorn."""
     import uvicorn
+
     app = create_inference_server(config)
     uvicorn.run(app, host=host, port=port, workers=1)
 

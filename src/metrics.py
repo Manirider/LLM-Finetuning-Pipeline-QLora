@@ -14,34 +14,36 @@ Comprehensive metrics for LLM evaluation including:
 from __future__ import annotations
 
 import math
-import re
-from collections import Counter
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
 
 try:
     import torch
+
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
 
 try:
     from rouge_score import rouge_scorer
+
     ROUGE_AVAILABLE = True
 except ImportError:
     ROUGE_AVAILABLE = False
 
 try:
-    from nltk.translate.bleu_score import sentence_bleu, corpus_bleu, SmoothingFunction
+    from nltk.translate.bleu_score import SmoothingFunction, corpus_bleu, sentence_bleu
     from nltk.translate.meteor_score import meteor_score
+
     NLTK_AVAILABLE = True
 except ImportError:
     NLTK_AVAILABLE = False
 
 try:
     from bert_score import score as bert_score_fn
+
     BERTSCORE_AVAILABLE = True
 except ImportError:
     BERTSCORE_AVAILABLE = False
@@ -50,10 +52,11 @@ except ImportError:
 @dataclass
 class MetricResult:
     """Result of a metric computation."""
+
     name: str
     value: float
-    details: Dict[str, Any] = None
-    
+    details: dict[str, Any] = None
+
     def __post_init__(self):
         if self.details is None:
             self.details = {}
@@ -88,12 +91,12 @@ class MetricsCalculator:
 
     def __init__(
         self,
-        rouge_types: List[str] = None,
+        rouge_types: list[str] = None,
         bleu_smoothing: str = "exp",
         bertscore_model: str = "microsoft/deberta-xlarge-mnli",
         bertscore_layers: int = 17,
         perplexity_model: str = "gpt2-large",
-        distinct_n: List[int] = None,
+        distinct_n: list[int] = None,
     ):
         self.rouge_types = rouge_types or ["rouge1", "rouge2", "rougeL", "rougeLsum"]
         self.bleu_smoothing = bleu_smoothing
@@ -101,7 +104,7 @@ class MetricsCalculator:
         self.bertscore_layers = bertscore_layers
         self.perplexity_model = perplexity_model
         self.distinct_n = distinct_n or [1, 2, 3, 4]
-        
+
         # Initialize scorers
         self._rouge_scorer = None
         self._smoothing_fn = None
@@ -114,7 +117,7 @@ class MetricsCalculator:
                 self.rouge_types,
                 use_stemmer=True,
             )
-        
+
         if NLTK_AVAILABLE:
             sf = SmoothingFunction()
             if self.bleu_smoothing == "exp":
@@ -128,9 +131,9 @@ class MetricsCalculator:
 
     def calculate_rouge(
         self,
-        predictions: List[str],
-        references: List[str],
-    ) -> Dict[str, MetricResult]:
+        predictions: list[str],
+        references: list[str],
+    ) -> dict[str, MetricResult]:
         """Calculate ROUGE scores."""
         if not ROUGE_AVAILABLE or self._rouge_scorer is None:
             return {rt: MetricResult(rt, 0.0) for rt in self.rouge_types}
@@ -140,7 +143,7 @@ class MetricsCalculator:
 
         scores = {rt: [] for rt in self.rouge_types}
 
-        for pred, ref in zip(predictions, references):
+        for pred, ref in zip(predictions, references, strict=False):
             result = self._rouge_scorer.score(ref, pred)
             for rt in self.rouge_types:
                 scores[rt].append(result[rt].fmeasure)
@@ -163,10 +166,10 @@ class MetricsCalculator:
 
     def calculate_bleu(
         self,
-        predictions: List[str],
-        references: List[List[str]],
+        predictions: list[str],
+        references: list[list[str]],
         max_order: int = 4,
-    ) -> Dict[str, MetricResult]:
+    ) -> dict[str, MetricResult]:
         """Calculate BLEU scores."""
         if not NLTK_AVAILABLE:
             return {"bleu": MetricResult("bleu", 0.0)}
@@ -186,7 +189,7 @@ class MetricsCalculator:
 
         # Also calculate per-sentence BLEU
         sentence_bleus = []
-        for pred, refs in zip(tokenized_preds, tokenized_refs):
+        for pred, refs in zip(tokenized_preds, tokenized_refs, strict=False):
             sb = sentence_bleu(
                 refs,
                 pred,
@@ -209,15 +212,15 @@ class MetricsCalculator:
 
     def calculate_meteor(
         self,
-        predictions: List[str],
-        references: List[List[str]],
-    ) -> Dict[str, MetricResult]:
+        predictions: list[str],
+        references: list[list[str]],
+    ) -> dict[str, MetricResult]:
         """Calculate METEOR score."""
         if not NLTK_AVAILABLE:
             return {"meteor": MetricResult("meteor", 0.0)}
 
         scores = []
-        for pred, refs in zip(predictions, references):
+        for pred, refs in zip(predictions, references, strict=False):
             try:
                 # METEOR expects tokenized input
                 pred_tokens = pred.split()
@@ -242,11 +245,11 @@ class MetricsCalculator:
 
     def calculate_bertscore(
         self,
-        predictions: List[str],
-        references: List[str],
+        predictions: list[str],
+        references: list[str],
         lang: str = "en",
         batch_size: int = 32,
-    ) -> Dict[str, MetricResult]:
+    ) -> dict[str, MetricResult]:
         """Calculate BERTScore."""
         if not BERTSCORE_AVAILABLE:
             return {
@@ -297,13 +300,13 @@ class MetricsCalculator:
 
     def calculate_perplexity(
         self,
-        texts: List[str],
-        model: Optional[Any] = None,
-        tokenizer: Optional[Any] = None,
+        texts: list[str],
+        model: Any | None = None,
+        tokenizer: Any | None = None,
         stride: int = 512,
         max_length: int = 1024,
         batch_size: int = 8,
-    ) -> Dict[str, MetricResult]:
+    ) -> dict[str, MetricResult]:
         """Calculate perplexity using a language model."""
         if not TORCH_AVAILABLE:
             return {"perplexity": MetricResult("perplexity", 0.0)}
@@ -311,6 +314,7 @@ class MetricsCalculator:
         # Use provided model or load default
         if model is None:
             from transformers import AutoModelForCausalLM, AutoTokenizer
+
             model = AutoModelForCausalLM.from_pretrained(
                 self.perplexity_model,
                 torch_dtype=torch.float16,
@@ -325,22 +329,22 @@ class MetricsCalculator:
         for text in texts:
             encodings = tokenizer(text, return_tensors="pt", truncation=True, max_length=max_length)
             input_ids = encodings.input_ids.to(model.device)
-            
+
             # Sliding window
             for i in range(0, input_ids.size(1), stride):
                 end = min(i + stride, input_ids.size(1))
                 chunk = input_ids[:, i:end]
-                
+
                 if chunk.size(1) < 2:
                     continue
-                    
+
                 with torch.no_grad():
                     outputs = model(chunk, labels=chunk)
                     loss = outputs.loss
                     total_loss += loss.item() * chunk.size(1)
                     total_tokens += chunk.size(1)
 
-        perplexity = math.exp(total_loss / total_tokens) if total_tokens > 0 else float('inf')
+        perplexity = math.exp(total_loss / total_tokens) if total_tokens > 0 else float("inf")
 
         return {
             "perplexity": MetricResult(
@@ -356,22 +360,22 @@ class MetricsCalculator:
 
     def calculate_distinct_n(
         self,
-        texts: List[str],
-    ) -> Dict[str, MetricResult]:
+        texts: list[str],
+    ) -> dict[str, MetricResult]:
         """Calculate Distinct-n scores."""
         results = {}
-        
+
         for n in self.distinct_n:
             ngrams = set()
             total = 0
-            
+
             for text in texts:
                 tokens = text.split()
                 for i in range(len(tokens) - n + 1):
-                    ngram = tuple(tokens[i:i+n])
+                    ngram = tuple(tokens[i : i + n])
                     ngrams.add(ngram)
                     total += 1
-            
+
             distinct = len(ngrams) / total if total > 0 else 0.0
             results[f"distinct_{n}"] = MetricResult(
                 name=f"distinct_{n}",
@@ -381,24 +385,24 @@ class MetricsCalculator:
                     "total_ngrams": total,
                 },
             )
-        
+
         return results
 
     def calculate_all(
         self,
-        predictions: List[str],
-        references: List[str],
-        references_list: Optional[List[List[str]]] = None,
-        texts_for_perplexity: Optional[List[str]] = None,
-        model: Optional[Any] = None,
-        tokenizer: Optional[Any] = None,
-    ) -> Dict[str, MetricResult]:
+        predictions: list[str],
+        references: list[str],
+        references_list: list[list[str]] | None = None,
+        texts_for_perplexity: list[str] | None = None,
+        model: Any | None = None,
+        tokenizer: Any | None = None,
+    ) -> dict[str, MetricResult]:
         """Calculate all available metrics."""
         results = {}
-        
+
         # ROUGE
         results.update(self.calculate_rouge(predictions, references))
-        
+
         # BLEU
         if references_list is not None:
             results.update(self.calculate_bleu(predictions, references_list))
@@ -406,31 +410,29 @@ class MetricsCalculator:
             # Use single references
             refs_list = [[r] for r in references]
             results.update(self.calculate_bleu(predictions, refs_list))
-        
+
         # METEOR
         if references_list is not None:
             results.update(self.calculate_meteor(predictions, references_list))
-        
+
         # BERTScore
         results.update(self.calculate_bertscore(predictions, references))
-        
+
         # Distinct-n
         results.update(self.calculate_distinct_n(predictions))
-        
+
         # Perplexity (if model provided)
         if model is not None and texts_for_perplexity is not None:
-            results.update(self.calculate_perplexity(
-                texts_for_perplexity, model, tokenizer
-            ))
-        
+            results.update(self.calculate_perplexity(texts_for_perplexity, model, tokenizer))
+
         return results
 
 
 def compute_rouge(
-    predictions: List[str],
-    references: List[str],
-    rouge_types: List[str] = None,
-) -> Dict[str, float]:
+    predictions: list[str],
+    references: list[str],
+    rouge_types: list[str] = None,
+) -> dict[str, float]:
     """Convenience function to compute ROUGE scores."""
     calculator = MetricsCalculator(rouge_types=rouge_types)
     results = calculator.calculate_rouge(predictions, references)
@@ -438,8 +440,8 @@ def compute_rouge(
 
 
 def compute_bleu(
-    predictions: List[str],
-    references: List[List[str]],
+    predictions: list[str],
+    references: list[list[str]],
     max_order: int = 4,
 ) -> float:
     """Convenience function to compute BLEU score."""
@@ -449,8 +451,8 @@ def compute_bleu(
 
 
 def compute_meteor(
-    predictions: List[str],
-    references: List[List[str]],
+    predictions: list[str],
+    references: list[list[str]],
 ) -> float:
     """Convenience function to compute METEOR score."""
     calculator = MetricsCalculator()
@@ -459,10 +461,10 @@ def compute_meteor(
 
 
 def compute_bertscore(
-    predictions: List[str],
-    references: List[str],
+    predictions: list[str],
+    references: list[str],
     model_type: str = "microsoft/deberta-xlarge-mnli",
-) -> Tuple[float, float, float]:
+) -> tuple[float, float, float]:
     """Convenience function to compute BERTScore (P, R, F1)."""
     calculator = MetricsCalculator()
     results = calculator.calculate_bertscore(predictions, references)
@@ -474,7 +476,7 @@ def compute_bertscore(
 
 
 def compute_perplexity(
-    texts: List[str],
+    texts: list[str],
     model_name: str = "gpt2-large",
 ) -> float:
     """Convenience function to compute perplexity."""
@@ -483,9 +485,9 @@ def compute_perplexity(
     return results["perplexity"].value
 
 
-def compute_distinct_n(texts: List[str], n: int = 4) -> Dict[str, float]:
+def compute_distinct_n(texts: list[str], n: int = 4) -> dict[str, float]:
     """Convenience function to compute Distinct-n scores."""
-    calculator = MetricsCalculator(distinct_n=list(range(1, n+1)))
+    calculator = MetricsCalculator(distinct_n=list(range(1, n + 1)))
     results = calculator.calculate_distinct_n(texts)
     return {k: v.value for k, v in results.items()}
 
@@ -494,11 +496,11 @@ class MetricTracker:
     """Track and aggregate metrics during training/evaluation."""
 
     def __init__(self):
-        self.metrics: Dict[str, List[float]] = {}
-        self.best_metrics: Dict[str, float] = {}
-        self.best_steps: Dict[str, int] = {}
+        self.metrics: dict[str, list[float]] = {}
+        self.best_metrics: dict[str, float] = {}
+        self.best_steps: dict[str, int] = {}
 
-    def update(self, metrics: Dict[str, float], step: int) -> None:
+    def update(self, metrics: dict[str, float], step: int) -> None:
         """Update metrics with new values."""
         for name, value in metrics.items():
             if name not in self.metrics:
@@ -513,11 +515,11 @@ class MetricTracker:
                 self.best_metrics[name] = value
                 self.best_steps[name] = step
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, Any]:
         """Get summary statistics."""
         summary = {}
         for name, values in self.metrics.items():
-            values_array = np.array(values)
+            np.array(values)
             summary[name] = {
                 "current": values[-1] if values else None,
                 "mean": float(np.mean(values)),
@@ -530,34 +532,34 @@ class MetricTracker:
             }
         return summary
 
-    def get_latest(self, name: str) -> Optional[float]:
+    def get_latest(self, name: str) -> float | None:
         """Get latest value for a metric."""
         if name in self.metrics and self.metrics[name]:
             return self.metrics[name][-1]
         return None
 
 
-def compute_diversity_metrics(texts: List[str]) -> Dict[str, float]:
+def compute_diversity_metrics(texts: list[str]) -> dict[str, float]:
     """Compute diversity metrics (Distinct-n, Self-BLEU, etc.)."""
     results = {}
-    
+
     # Distinct-n
     distinct = compute_distinct_n(texts)
     results.update(distinct)
-    
+
     # Self-BLEU (BLEU of each text against others)
     if len(texts) > 1:
         self_bleu = 0.0
         for i, text in enumerate(texts):
-            others = texts[:i] + texts[i+1:]
+            others = texts[:i] + texts[i + 1 :]
             bleu = compute_bleu(text, [o.split() for o in others])
             self_bleu += bleu
         results["self_bleu"] = self_bleu / len(texts)
-    
+
     return results
 
 
-def compute_length_statistics(texts: List[str]) -> Dict[str, float]:
+def compute_length_statistics(texts: list[str]) -> dict[str, float]:
     """Compute length statistics for texts."""
     lengths = [len(t.split()) for t in texts]
     return {
@@ -569,13 +571,13 @@ def compute_length_statistics(texts: List[str]) -> Dict[str, float]:
     }
 
 
-def compute_token_statistics(texts: List[str], tokenizer) -> Dict[str, float]:
+def compute_token_statistics(texts: list[str], tokenizer) -> dict[str, float]:
     """Compute token-level statistics using tokenizer."""
     token_counts = []
     for text in texts:
         tokens = tokenizer.encode(text)
         token_counts.append(len(tokens))
-    
+
     return {
         "mean_tokens": np.mean(token_counts),
         "std_tokens": np.std(token_counts),
@@ -585,7 +587,7 @@ def compute_token_statistics(texts: List[str], tokenizer) -> Dict[str, float]:
     }
 
 
-def aggregate_metrics(results_list: List[Dict[str, MetricResult]]) -> Dict[str, MetricResult]:
+def aggregate_metrics(results_list: list[dict[str, MetricResult]]) -> dict[str, MetricResult]:
     """Aggregate metrics from multiple runs."""
     aggregated = {}
     for results in results_list:
@@ -596,7 +598,7 @@ def aggregate_metrics(results_list: List[Dict[str, MetricResult]]) -> Dict[str, 
 
     final = {}
     for name, values in aggregated.items():
-        values_array = np.array(values)
+        np.array(values)
         final[name] = MetricResult(
             name=name,
             value=float(np.mean(values)),
@@ -610,7 +612,7 @@ def aggregate_metrics(results_list: List[Dict[str, MetricResult]]) -> Dict[str, 
     return final
 
 
-def print_metrics_report(results: Dict[str, MetricResult]) -> str:
+def print_metrics_report(results: dict[str, MetricResult]) -> str:
     """Format metrics results as a readable report."""
     lines = ["=" * 50, "METRICS REPORT", "=" * 50]
     for name, result in sorted(results.items()):

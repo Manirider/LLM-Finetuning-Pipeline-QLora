@@ -7,17 +7,19 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import patch
 
 import pytest
+import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from src.config import ConfigManager
 from src.data_pipeline import DataPipeline
-from src.model_utils import load_model_and_tokenizer
-from src.train import create_argument_parser, main as train_main
-from src.evaluate import create_argument_parser as eval_parser, main as eval_main
+from src.evaluate import create_argument_parser as eval_parser
+from src.evaluate import main as eval_main
+from src.train import create_argument_parser
+from src.train import main as train_main
 
 
 class TestConfigLoading:
@@ -26,7 +28,7 @@ class TestConfigLoading:
     def test_config_manager_loads(self):
         """Test ConfigManager loads all configs."""
         config = ConfigManager(config_dir="configs")
-        
+
         assert config.training is not None
         assert config.model is not None
         assert config.data is not None
@@ -36,15 +38,15 @@ class TestConfigLoading:
     def test_config_values_exist(self):
         """Test config has expected default values."""
         config = ConfigManager(config_dir="configs")
-        
+
         # Training config
         assert config.training.trainer.num_train_epochs == 3
         assert config.training.trainer.learning_rate == 2e-4
         assert config.training.lora.r == 64
-        
+
         # Model config
         assert "Llama" in config.model.model.model_name_or_path
-        
+
         # Data config
         assert len(config.data.datasets) > 0
         assert config.data.default_template == "alpaca"
@@ -52,9 +54,9 @@ class TestConfigLoading:
     def test_env_var_resolution(self):
         """Test environment variable resolution."""
         os.environ["TEST_VAR"] = "test_value"
-        
+
         config = ConfigManager(config_dir="configs", env_file=".env.example")
-        
+
         # Check that placeholders exist (actual resolution depends on env)
         assert config is not None
 
@@ -77,7 +79,7 @@ class TestDataPipeline:
     def test_formatters_available(self):
         """Test all formatters are available."""
         from src.data_pipeline import FORMATTERS
-        
+
         expected = ["alpaca", "chatml", "llama3", "vicuna", "zephyr", "plain", "custom"]
         for name in expected:
             assert name in FORMATTERS
@@ -85,7 +87,7 @@ class TestDataPipeline:
     def test_formatter_creation(self):
         """Test formatter creation."""
         from src.data_pipeline import get_formatter
-        
+
         for name in ["alpaca", "chatml", "llama3"]:
             formatter = get_formatter(name)
             assert formatter is not None
@@ -97,7 +99,7 @@ class TestModelUtils:
     def test_torch_dtype_conversion(self):
         """Test torch dtype conversion."""
         from src.model_utils import get_torch_dtype
-        
+
         assert get_torch_dtype("float16") == torch.float16
         assert get_torch_dtype("bfloat16") == torch.bfloat16
         assert get_torch_dtype("float32") == torch.float32
@@ -106,34 +108,34 @@ class TestModelUtils:
 
     def test_bnb_config_creation(self):
         """Test BNB config creation."""
-        from src.model_utils import create_bnb_config
         from src.config import QuantizationConfig
-        
+        from src.model_utils import create_bnb_config
+
         quant_config = QuantizationConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
             bnb_4bit_compute_dtype="bfloat16",
             bnb_4bit_use_double_quant=True,
         )
-        
+
         bnb_config = create_bnb_config(quant_config)
-        
+
         assert bnb_config.load_in_4bit is True
         assert bnb_config.bnb_4bit_quant_type == "nf4"
 
     def test_lora_config_creation(self):
         """Test LoRA config creation."""
-        from src.model_utils import create_lora_config
         from src.config import PEFTLoraConfig
-        
+        from src.model_utils import create_lora_config
+
         peft_config = PEFTLoraConfig(
             r=64,
             lora_alpha=16,
             target_modules=["q_proj", "v_proj"],
         )
-        
+
         lora_config = create_lora_config(peft_config)
-        
+
         assert lora_config.r == 64
         assert lora_config.target_modules == ["q_proj", "v_proj"]
 
@@ -144,38 +146,38 @@ class TestTrainingComponents:
     def test_argument_parser(self):
         """Test training argument parser."""
         parser = create_argument_parser()
-        
+
         args = parser.parse_args(["--config", "configs"])
         assert args.config == "configs"
-        
+
         args = parser.parse_args(["--dry-run"])
         assert args.dry_run is True
 
     def test_callbacks_creation(self):
         """Test callback creation."""
-        from src.train import create_callbacks
         from src.config import CallbacksConfig, EarlyStoppingConfig, LoggingCallbackConfig
-        
+        from src.train import create_callbacks
+
         callbacks_config = CallbacksConfig(
             early_stopping=EarlyStoppingConfig(enabled=True),
             logging=LoggingCallbackConfig(enabled=True),
         )
-        
+
         callbacks = create_callbacks(callbacks_config)
         assert len(callbacks) > 0
 
     def test_training_args_creation(self):
         """Test TrainingArguments creation."""
+        from src.config import RuntimeConfig, TrainerConfig
         from src.train import create_training_arguments
-        from src.config import TrainerConfig, RuntimeConfig
-        
+
         trainer_config = TrainerConfig(
             output_dir="./test",
             num_train_epochs=1,
             per_device_train_batch_size=1,
         )
         runtime_config = RuntimeConfig()
-        
+
         with tempfile.TemporaryDirectory() as tmpdir:
             args = create_training_arguments(trainer_config, tmpdir, runtime_config)
             assert args.output_dir == tmpdir
@@ -187,22 +189,22 @@ class TestEvaluationComponents:
     def test_eval_argument_parser(self):
         """Test evaluation argument parser."""
         parser = eval_parser()
-        
+
         args = parser.parse_args(["--base-model", "model", "--output-dir", "./out"])
         assert args.base_model == "model"
         assert args.output_dir == "./out"
 
     def test_metrics_calculator(self):
         """Test metrics calculator initialization."""
+        from src.config import BertScoreConfig, BleuConfig, RougeConfig
         from src.evaluate import MetricsCalculator
-        from src.config import RougeConfig, BleuConfig, BertScoreConfig
-        
+
         calc = MetricsCalculator(
             rouge_config=RougeConfig(enabled=True),
             bleu_config=BleuConfig(enabled=True),
             bertscore_config=BertScoreConfig(enabled=False),
         )
-        
+
         assert calc.rouge_config.enabled is True
         assert calc.bleu_config.enabled is True
         assert calc.bertscore_config.enabled is False
@@ -210,9 +212,9 @@ class TestEvaluationComponents:
     def test_prompt_formatter(self):
         """Test prompt formatter."""
         from src.evaluate import PromptFormatter
-        
+
         formatter = PromptFormatter()
-        
+
         # Test alpaca
         prompt = formatter.format(
             template="alpaca",
@@ -222,7 +224,7 @@ class TestEvaluationComponents:
             system_message="System",
         )
         assert "### Instruction:" in prompt
-        
+
         # Test chatml
         prompt = formatter.format(
             template="chatml",
@@ -239,37 +241,36 @@ class TestCLICommands:
 
     def test_train_help(self, capsys):
         """Test train --help."""
-        from src.train import main as train_main
         import sys
-        
-        with patch.object(sys, 'argv', ['train', '--help']):
+
+        with patch.object(sys, "argv", ["train", "--help"]):
             with pytest.raises(SystemExit):
                 train_main()
-        
+
         out, _ = capsys.readouterr()
         assert "usage" in out.lower() or "help" in out.lower()
 
     def test_evaluate_help(self, capsys):
         """Test evaluate --help."""
-        from src.evaluate import main as eval_main
         import sys
-        
-        with patch.object(sys, 'argv', ['evaluate', '--help']):
+
+        with patch.object(sys, "argv", ["evaluate", "--help"]):
             with pytest.raises(SystemExit):
                 eval_main()
-        
+
         out, _ = capsys.readouterr()
         assert "usage" in out.lower() or "help" in out.lower()
 
     def test_data_pipeline_help(self, capsys):
         """Test data_pipeline --help."""
-        from src.data_pipeline import main as data_main
         import sys
-        
-        with patch.object(sys, 'argv', ['data_pipeline', '--help']):
+
+        from src.data_pipeline import main as data_main
+
+        with patch.object(sys, "argv", ["data_pipeline", "--help"]):
             with pytest.raises(SystemExit):
                 data_main()
-        
+
         out, _ = capsys.readouterr()
         assert "usage" in out.lower() or "help" in out.lower()
 
@@ -279,14 +280,14 @@ class TestEndToEndImports:
 
     def test_all_src_modules_import(self):
         """Test all src modules can be imported."""
+        import src.callbacks
         import src.config
         import src.data_pipeline
-        import src.model_utils
-        import src.train
         import src.evaluate
         import src.logger
         import src.metrics
-        import src.callbacks
+        import src.model_utils
+        import src.train
         import src.utils
 
         # Check key exports exist
@@ -299,13 +300,13 @@ class TestEndToEndImports:
     def test_config_classes_exist(self):
         """Test config classes exist."""
         from src.config import (
-            TrainingConfig,
-            ModelConfigComplete,
             DataConfigComplete,
-            LoggingConfigComplete,
             EvaluationConfigComplete,
+            LoggingConfigComplete,
+            ModelConfigComplete,
+            TrainingConfig,
         )
-        
+
         # All should be importable
         assert TrainingConfig is not None
         assert ModelConfigComplete is not None
@@ -380,7 +381,7 @@ class TestConfigurationValidation:
     def test_training_config_validation(self):
         """Test training config validation."""
         from src.config import TrainerConfig
-        
+
         # Valid config
         config = TrainerConfig(
             learning_rate=2e-4,
@@ -392,10 +393,10 @@ class TestConfigurationValidation:
     def test_lora_config_validation(self):
         """Test LoRA config validation."""
         from src.config import LoRAConfig
-        
+
         config = LoRAConfig(r=64, lora_alpha=16)
         assert config.r == 64
-        
+
         # Test bias validation
         with pytest.raises(ValueError):
             LoRAConfig(bias="invalid")
@@ -403,28 +404,30 @@ class TestConfigurationValidation:
     def test_quantization_config_validation(self):
         """Test quantization config validation."""
         from src.config import QuantizationConfig
-        
+
         config = QuantizationConfig(
             bnb_4bit_quant_type="nf4",
             bnb_4bit_compute_dtype="bfloat16",
         )
         assert config.bnb_4bit_quant_type == "nf4"
-        
+
         with pytest.raises(ValueError):
             QuantizationConfig(bnb_4bit_quant_type="invalid")
-        
+
         with pytest.raises(ValueError):
             QuantizationConfig(bnb_4bit_compute_dtype="invalid")
 
     def test_split_ratios_validation(self):
         """Test split ratios validation."""
         from src.config import SplittingConfig
-        
+
         config = SplittingConfig(ratios={"train": 0.8, "validation": 0.1, "test": 0.1})
         assert config.ratios["train"] == 0.8
-        
+
         with pytest.raises(ValueError):
-            SplittingConfig(ratios={"train": 0.8, "validation": 0.1, "test": 0.2})  # Doesn't sum to 1
+            SplittingConfig(
+                ratios={"train": 0.8, "validation": 0.1, "test": 0.2}
+            )  # Doesn't sum to 1
 
 
 if __name__ == "__main__":

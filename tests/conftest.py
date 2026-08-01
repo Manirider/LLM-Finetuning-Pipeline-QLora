@@ -7,7 +7,6 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List
 from unittest.mock import MagicMock, Mock
 
 # Force CPU-only mode for testing BEFORE any torch imports
@@ -55,8 +54,12 @@ def mock_model():
     model.config.vocab_size = 32000
     model.device = "cpu"
     model.generate = Mock(return_value=[[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]])
-    model.parameters = Mock(return_value=[Mock(numel=Mock(return_value=1000000), requires_grad=True)])
-    model.named_parameters = Mock(return_value=[("layer.weight", Mock(numel=Mock(return_value=1000000), requires_grad=True))])
+    model.parameters = Mock(
+        return_value=[Mock(numel=Mock(return_value=1000000), requires_grad=True)]
+    )
+    model.named_parameters = Mock(
+        return_value=[("layer.weight", Mock(numel=Mock(return_value=1000000), requires_grad=True))]
+    )
     model.eval = Mock()
     model.train = Mock()
     return model
@@ -97,6 +100,7 @@ def sample_dataset():
 def sample_generation_config():
     """Create a sample generation config."""
     from src.config import GenerationConfig
+
     return GenerationConfig(
         max_new_tokens=256,
         temperature=0.7,
@@ -111,6 +115,7 @@ def sample_generation_config():
 def sample_eval_dataset_config():
     """Create a sample evaluation dataset config."""
     from src.config import EvalDatasetConfig
+
     return EvalDatasetConfig(
         name="test_dataset",
         path="test/path",
@@ -169,10 +174,8 @@ class TestDataFactory:
 
     @staticmethod
     def create_dataset_dict(
-        num_samples: int = 10,
-        include_input: bool = True,
-        template: str = "alpaca"
-    ) -> Dict[str, List]:
+        num_samples: int = 10, include_input: bool = True, template: str = "alpaca"
+    ) -> dict[str, list]:
         """Create a dataset dictionary."""
         import random
         import string
@@ -186,8 +189,7 @@ class TestDataFactory:
             for _ in range(num_samples)
         ]
         outputs = [
-            "".join(random.choices(string.ascii_lowercase + " ", k=40))
-            for _ in range(num_samples)
+            "".join(random.choices(string.ascii_lowercase + " ", k=40)) for _ in range(num_samples)
         ]
 
         return {
@@ -197,10 +199,7 @@ class TestDataFactory:
         }
 
     @staticmethod
-    def create_formatted_prompts(
-        num_prompts: int = 5,
-        template: str = "alpaca"
-    ) -> List[str]:
+    def create_formatted_prompts(num_prompts: int = 5, template: str = "alpaca") -> list[str]:
         """Create formatted prompts."""
         templates = {
             "alpaca": "### Instruction:\n{instruction}\n\n### Response:\n",

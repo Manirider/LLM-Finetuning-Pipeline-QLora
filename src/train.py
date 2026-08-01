@@ -20,22 +20,18 @@ from __future__ import annotations
 import argparse
 import gc
 import logging
-import os
-import sys
 import time
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import torch
 import torch.nn as nn
 from datasets import Dataset, DatasetDict
+from peft import (
+    PeftModel,
+)
 from transformers import (
-    AutoConfig,
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    BitsAndBytesConfig,
     PreTrainedModel,
     PreTrainedTokenizer,
     Trainer,
@@ -45,48 +41,28 @@ from transformers import (
     TrainingArguments,
     set_seed,
 )
-from transformers.integrations import (
-    TensorBoardCallback,
-    WandbCallback,
-    MLflowCallback,
-)
-from peft import (
-    LoraConfig,
-    PeftModel,
-    TaskType,
-    get_peft_model,
-    prepare_model_for_kbit_training,
-)
-from trl import SFTTrainer, SFTConfig
+from trl import SFTConfig, SFTTrainer
 
-from src.config import (
-    ConfigManager,
-    TrainingConfig,
-    TrainerConfig,
-    LoRAConfig,
-    QuantizationConfig,
-    SFTConfig as ConfigSFTConfig,
-    RuntimeConfig,
-    ExperimentConfig,
-    CallbacksConfig,
-    EarlyStoppingConfig,
-    CheckpointConfig,
-    LoggingCallbackConfig,
-    ProfilerConfig,
-)
-from src.model_utils import (
-    load_model_and_tokenizer,
-    load_peft_adapter,
-    merge_and_unload_peft,
-    save_model_and_tokenizer,
-    count_parameters,
-    print_model_summary,
-    get_gpu_memory_info,
-    log_gpu_memory,
-    clear_gpu_cache,
-)
 from src.callbacks import EarlyStoppingCallback as _EarlyStoppingCallbackBase
+from src.config import (
+    CallbacksConfig,
+    ConfigManager,
+    ExperimentConfig,
+    RuntimeConfig,
+    TrainerConfig,
+    TrainingConfig,
+)
+from src.config import SFTConfig as ConfigSFTConfig
 from src.data_pipeline import DataPipeline
+from src.model_utils import (
+    clear_gpu_cache,
+    get_gpu_memory_info,
+    load_model_and_tokenizer,
+    log_gpu_memory,
+    merge_and_unload_peft,
+    print_model_summary,
+    save_model_and_tokenizer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +70,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class TrainingMetrics:
     """Container for training metrics."""
+
     train_loss: float = 0.0
     eval_loss: float = 0.0
     learning_rate: float = 0.0
@@ -125,11 +102,12 @@ class GradientNormCallback(TrainerCallback):
             for p in model.parameters():
                 if p.grad is not None:
                     param_norm = p.grad.data.norm(2)
-                    norm_val = param_norm.item() if hasattr(param_norm, "item") else float(param_norm)
-                    total_norm += norm_val ** 2
-            total_norm = total_norm ** 0.5
+                    norm_val = (
+                        param_norm.item() if hasattr(param_norm, "item") else float(param_norm)
+                    )
+                    total_norm += norm_val**2
+            total_norm = total_norm**0.5
             logger.info(f"Step {state.global_step}: grad_norm = {total_norm:.4f}")
-            print(f"Step {state.global_step}: grad_norm = {total_norm:.4f}")
 
 
 class GPUMemoryCallback(TrainerCallback):
@@ -174,7 +152,6 @@ class LearningRateCallback(TrainerCallback):
         if state.global_step % self.log_freq == 0 and optimizer is not None:
             lr = optimizer.param_groups[0]["lr"]
             logger.info(f"Step {state.global_step}: learning_rate = {lr:.2e}")
-            print(f"Step {state.global_step}: learning_rate = {lr:.2e}")
 
 
 class ThroughputCallback(TrainerCallback):
@@ -198,9 +175,7 @@ class ThroughputCallback(TrainerCallback):
             elapsed = current_time - self.last_time
             if elapsed > 0:
                 steps_per_sec = steps / elapsed
-                logger.info(
-                    f"Step {state.global_step}: throughput = {steps_per_sec:.2f} steps/sec"
-                )
+                logger.info(f"Step {state.global_step}: throughput = {steps_per_sec:.2f} steps/sec")
             self.last_step = state.global_step
             self.last_time = current_time
 
@@ -212,7 +187,7 @@ class ProfilerCallback(TrainerCallback):
         self,
         profile_dir: str = "./logs/profiler",
         profile_steps: int = 10,
-        activities: List[str] = None,
+        activities: list[str] = None,
         record_shapes: bool = True,
         with_stack: bool = True,
     ):
@@ -233,10 +208,14 @@ class ProfilerCallback(TrainerCallback):
     ):
         if torch.cuda.is_available():
             self.profiler = torch.profiler.profile(
-                activities=[
-                    torch.profiler.ProfilerActivity.CPU,
-                    torch.profiler.ProfilerActivity.CUDA,
-                ] if "cuda" in self.activities else [torch.profiler.ProfilerActivity.CPU],
+                activities=(
+                    [
+                        torch.profiler.ProfilerActivity.CPU,
+                        torch.profiler.ProfilerActivity.CUDA,
+                    ]
+                    if "cuda" in self.activities
+                    else [torch.profiler.ProfilerActivity.CPU]
+                ),
                 record_shapes=self.record_shapes,
                 with_stack=self.with_stack,
                 schedule=torch.profiler.schedule(
@@ -276,17 +255,19 @@ class ProfilerCallback(TrainerCallback):
 EarlyStoppingCallback = _EarlyStoppingCallbackBase  # noqa: F811
 
 
-def create_callbacks(callbacks_config: CallbacksConfig) -> List[TrainerCallback]:
+def create_callbacks(callbacks_config: CallbacksConfig) -> list[TrainerCallback]:
     """Create list of callbacks from configuration."""
     callbacks = []
 
     if callbacks_config.early_stopping.enabled:
-        callbacks.append(EarlyStoppingCallback(
-            patience=callbacks_config.early_stopping.patience,
-            threshold=callbacks_config.early_stopping.threshold,
-            metric_for_best=callbacks_config.early_stopping.metric_for_best,
-            greater_is_better=callbacks_config.early_stopping.greater_is_better,
-        ))
+        callbacks.append(
+            EarlyStoppingCallback(
+                patience=callbacks_config.early_stopping.patience,
+                threshold=callbacks_config.early_stopping.threshold,
+                metric_for_best=callbacks_config.early_stopping.metric_for_best,
+                greater_is_better=callbacks_config.early_stopping.greater_is_better,
+            )
+        )
 
     if callbacks_config.logging.enabled:
         callbacks.append(GradientNormCallback(log_freq=callbacks_config.logging.log_steps))
@@ -295,13 +276,15 @@ def create_callbacks(callbacks_config: CallbacksConfig) -> List[TrainerCallback]
         callbacks.append(ThroughputCallback(log_freq=callbacks_config.logging.log_steps))
 
     if callbacks_config.profiler.enabled:
-        callbacks.append(ProfilerCallback(
-            profile_dir=callbacks_config.profiler.profile_dir,
-            profile_steps=callbacks_config.profiler.profile_steps,
-            activities=callbacks_config.profiler.activities,
-            record_shapes=callbacks_config.profiler.record_shapes,
-            with_stack=callbacks_config.profiler.with_stack,
-        ))
+        callbacks.append(
+            ProfilerCallback(
+                profile_dir=callbacks_config.profiler.profile_dir,
+                profile_steps=callbacks_config.profiler.profile_steps,
+                activities=callbacks_config.profiler.activities,
+                record_shapes=callbacks_config.profiler.record_shapes,
+                with_stack=callbacks_config.profiler.with_stack,
+            )
+        )
 
     return callbacks
 
@@ -310,15 +293,19 @@ def setup_experiment_tracking(
     training_config: TrainingConfig,
     experiment_config: ExperimentConfig,
     output_dir: str,
-) -> Tuple[Optional[Any], Optional[Any], Optional[Any]]:
+) -> tuple[Any | None, Any | None, Any | None]:
     """Setup experiment tracking (W&B, TensorBoard, MLflow)."""
     wandb_run = None
     tensorboard_writer = None
     mlflow_client = None
 
     # TensorBoard
-    tb_config = training_config.callbacks.tensorboard if hasattr(training_config.callbacks, 'tensorboard') else None
-    if hasattr(training_config, 'trainer') and training_config.trainer.report_to:
+    (
+        training_config.callbacks.tensorboard
+        if hasattr(training_config.callbacks, "tensorboard")
+        else None
+    )
+    if hasattr(training_config, "trainer") and training_config.trainer.report_to:
         if "tensorboard" in training_config.trainer.report_to:
             logger.info(f"TensorBoard logging to {training_config.trainer.logging_dir}")
 
@@ -326,13 +313,16 @@ def setup_experiment_tracking(
     if "wandb" in training_config.trainer.report_to:
         try:
             import wandb
+
             wandb.init(
                 project=experiment_config.project,
                 entity=experiment_config.entity,
                 name=experiment_config.name,
                 tags=experiment_config.tags,
                 notes=experiment_config.notes,
-                config=training_config.model_dump() if hasattr(training_config, 'model_dump') else {},
+                config=(
+                    training_config.model_dump() if hasattr(training_config, "model_dump") else {}
+                ),
                 dir=output_dir,
                 resume="allow",
             )
@@ -342,9 +332,10 @@ def setup_experiment_tracking(
             logger.warning("wandb not installed, skipping W&B logging")
 
     # MLflow
-    if hasattr(experiment_config, 'mlflow') and experiment_config.mlflow.enabled:
+    if hasattr(experiment_config, "mlflow") and experiment_config.mlflow.enabled:
         try:
             import mlflow
+
             mlflow.set_tracking_uri(experiment_config.mlflow.tracking_uri)
             mlflow.set_experiment(experiment_config.mlflow.experiment_name)
             mlflow.start_run(run_name=experiment_config.mlflow.run_name)
@@ -357,13 +348,14 @@ def setup_experiment_tracking(
 
 
 def cleanup_experiment_tracking(
-    wandb_run: Optional[Any],
-    mlflow_client: Optional[Any],
+    wandb_run: Any | None,
+    mlflow_client: Any | None,
 ):
     """Cleanup experiment tracking."""
     if wandb_run is not None:
         try:
             import wandb
+
             wandb.finish()
         except Exception:
             pass
@@ -472,6 +464,7 @@ def create_training_arguments(
             return TrainingArguments(**raw_args)
         except TypeError as e:
             import re
+
             m = re.search(r"'([^']+)'", str(e))
             if m and m.group(1) in raw_args and m.group(1) not in essential_keys:
                 raw_args.pop(m.group(1), None)
@@ -520,6 +513,7 @@ def create_sft_config(
             break
         except TypeError as e:
             import re
+
             m = re.search(r"unexpected keyword argument '([^']+)'", str(e))
             if m:
                 bad_arg = m.group(1)
@@ -543,10 +537,16 @@ def create_sft_config(
 
     if not hasattr(res, "max_seq_length"):
         try:
-            object.__setattr__(res, "max_seq_length", getattr(res, "max_length", getattr(sft_config, "max_seq_length", 512)))
+            object.__setattr__(
+                res,
+                "max_seq_length",
+                getattr(res, "max_length", getattr(sft_config, "max_seq_length", 512)),
+            )
         except Exception:
             try:
-                res.max_seq_length = getattr(res, "max_length", getattr(sft_config, "max_seq_length", 512))
+                res.max_seq_length = getattr(
+                    res, "max_length", getattr(sft_config, "max_seq_length", 512)
+                )
             except Exception:
                 pass
 
@@ -564,12 +564,12 @@ def create_trainer(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizer,
     train_dataset: Dataset,
-    eval_dataset: Optional[Dataset],
+    eval_dataset: Dataset | None,
     training_args: TrainingArguments,
-    sft_config: Optional[SFTConfig] = None,
-    callbacks: Optional[List[TrainerCallback]] = None,
+    sft_config: SFTConfig | None = None,
+    callbacks: list[TrainerCallback] | None = None,
     use_sft_trainer: bool = True,
-) -> Union[Trainer, SFTTrainer]:
+) -> Trainer | SFTTrainer:
     """Create Trainer or SFTTrainer."""
 
     if use_sft_trainer and sft_config is not None:
@@ -601,8 +601,8 @@ def train(
     tokenizer_config: Any,
     data_config_path: str = "configs/data.yaml",
     output_dir: str = "./checkpoints",
-    resume_from_checkpoint: Optional[str] = None,
-) -> Dict[str, Any]:
+    resume_from_checkpoint: str | None = None,
+) -> dict[str, Any]:
     """
     Main training function.
 
@@ -736,7 +736,7 @@ def merge_and_save_model(
     max_shard_size: str = "5GB",
     push_to_hub: bool = False,
     hub_model_id: str = "",
-    hub_token: Optional[str] = None,
+    hub_token: str | None = None,
     hub_private_repo: bool = False,
 ):
     """Merge LoRA adapter and save model."""
@@ -776,14 +776,16 @@ def create_argument_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--config", "-c",
+        "--config",
+        "-c",
         type=str,
         default="configs",
         help="Config directory path",
     )
 
     parser.add_argument(
-        "--output-dir", "-o",
+        "--output-dir",
+        "-o",
         type=str,
         default="./checkpoints",
         help="Output directory for checkpoints",
@@ -852,14 +854,16 @@ def create_argument_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--learning-rate", "--lr",
+        "--learning-rate",
+        "--lr",
         type=float,
         default=None,
         help="Learning rate (overrides config)",
     )
 
     parser.add_argument(
-        "--batch-size", "--bs",
+        "--batch-size",
+        "--bs",
         type=int,
         default=None,
         help="Per device train batch size (overrides config)",
@@ -891,7 +895,8 @@ def create_argument_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="Verbose logging",
     )
@@ -930,10 +935,14 @@ def main():
         training_config.trainer.num_train_epochs = args.epochs
 
     if args.no_wandb:
-        training_config.trainer.report_to = [r for r in training_config.trainer.report_to if r != "wandb"]
+        training_config.trainer.report_to = [
+            r for r in training_config.trainer.report_to if r != "wandb"
+        ]
 
     if args.no_tensorboard:
-        training_config.trainer.report_to = [r for r in training_config.trainer.report_to if r != "tensorboard"]
+        training_config.trainer.report_to = [
+            r for r in training_config.trainer.report_to if r != "tensorboard"
+        ]
 
     if args.dry_run:
         logger.info("DRY RUN - Configuration:")

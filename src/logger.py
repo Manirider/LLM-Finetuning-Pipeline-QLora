@@ -10,16 +10,17 @@ from __future__ import annotations
 import json
 import logging
 import logging.handlers
-import os
 import sys
 import time
+from collections.abc import Callable
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any
 
 try:
     import torch
+
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
@@ -57,11 +58,27 @@ class StructuredFormatter(logging.Formatter):
         # Add extra fields
         for key, value in record.__dict__.items():
             if key not in {
-                "name", "msg", "args", "created", "filename", "funcName",
-                "levelname", "levelno", "lineno", "module", "msecs",
-                "message", "name", "pathname", "process", "processName",
-                "relativeCreated", "thread", "threadName", "exc_info",
-                "exc_text", "stack_info"
+                "name",
+                "msg",
+                "args",
+                "created",
+                "filename",
+                "funcName",
+                "levelname",
+                "levelno",
+                "lineno",
+                "module",
+                "msecs",
+                "message",
+                "pathname",
+                "process",
+                "processName",
+                "relativeCreated",
+                "thread",
+                "threadName",
+                "exc_info",
+                "exc_text",
+                "stack_info",
             }:
                 log_data[key] = value
 
@@ -72,11 +89,11 @@ class ColoredConsoleFormatter(logging.Formatter):
     """Colored console formatter with level-based colors."""
 
     COLORS = {
-        "DEBUG": "\033[36m",      # Cyan
-        "INFO": "\033[32m",       # Green
-        "WARNING": "\033[33m",    # Yellow
-        "ERROR": "\033[31m",      # Red
-        "CRITICAL": "\033[1;31m", # Bold Red
+        "DEBUG": "\033[36m",  # Cyan
+        "INFO": "\033[32m",  # Green
+        "WARNING": "\033[33m",  # Yellow
+        "ERROR": "\033[31m",  # Red
+        "CRITICAL": "\033[1;31m",  # Bold Red
     }
     RESET = "\033[0m"
 
@@ -95,8 +112,8 @@ class TensorBoardLogger:
 
     def __init__(
         self,
-        log_dir: Union[str, Path],
-        experiment_name: Optional[str] = None,
+        log_dir: str | Path,
+        experiment_name: str | None = None,
         comment: str = "",
         **kwargs,
     ):
@@ -105,13 +122,14 @@ class TensorBoardLogger:
         self.experiment_name = experiment_name or f"run_{int(time.time())}"
         self.comment = comment
         self._writer = None
-        self._steps: Dict[str, int] = {}
+        self._steps: dict[str, int] = {}
         self._kwargs = kwargs
         self._init_writer()
 
     def _init_writer(self):
         try:
             from torch.utils.tensorboard import SummaryWriter
+
             self._writer = SummaryWriter(
                 log_dir=str(self.log_dir / self.experiment_name),
                 comment=self.comment,
@@ -124,8 +142,8 @@ class TensorBoardLogger:
         self,
         tag: str,
         value: float,
-        step: Optional[int] = None,
-        walltime: Optional[float] = None,
+        step: int | None = None,
+        walltime: float | None = None,
     ) -> None:
         """Log a scalar value."""
         if self._writer is None:
@@ -137,8 +155,8 @@ class TensorBoardLogger:
     def log_scalars(
         self,
         tag: str,
-        values: Dict[str, float],
-        step: Optional[int] = None,
+        values: dict[str, float],
+        step: int | None = None,
     ) -> None:
         """Log multiple scalar values under a tag."""
         if self._writer is None:
@@ -150,8 +168,8 @@ class TensorBoardLogger:
     def log_histogram(
         self,
         tag: str,
-        values: Union[List[float], "torch.Tensor"],
-        step: Optional[int] = None,
+        values: list[float] | torch.Tensor,
+        step: int | None = None,
         bins: str = "tensorflow",
     ) -> None:
         """Log histogram of values."""
@@ -163,14 +181,14 @@ class TensorBoardLogger:
         self._writer.add_histogram(tag, values, step, bins=bins)
         self._steps[tag] = step + 1
 
-    def log_text(self, tag: str, text: str, step: Optional[int] = None) -> None:
+    def log_text(self, tag: str, text: str, step: int | None = None) -> None:
         """Log text."""
         if self._writer is None:
             return
         step = step if step is not None else self._steps.get(tag, 0)
         self._writer.add_text(tag, text, step)
 
-    def log_model_graph(self, model: "torch.nn.Module", input_sample: "torch.Tensor") -> None:
+    def log_model_graph(self, model: torch.nn.Module, input_sample: torch.Tensor) -> None:
         """Log model computational graph."""
         if self._writer is None:
             return
@@ -178,8 +196,8 @@ class TensorBoardLogger:
 
     def log_hparams(
         self,
-        hparams: Dict[str, Any],
-        metrics: Optional[Dict[str, float]] = None,
+        hparams: dict[str, Any],
+        metrics: dict[str, float] | None = None,
     ) -> None:
         """Log hyperparameters and final metrics."""
         if self._writer is None:
@@ -204,11 +222,11 @@ class WandbLogger:
     def __init__(
         self,
         project: str = "llm-finetuning",
-        entity: Optional[str] = None,
-        name: Optional[str] = None,
-        config: Optional[Dict[str, Any]] = None,
-        tags: Optional[List[str]] = None,
-        notes: Optional[str] = None,
+        entity: str | None = None,
+        name: str | None = None,
+        config: dict[str, Any] | None = None,
+        tags: list[str] | None = None,
+        notes: str | None = None,
         mode: str = "online",
         **kwargs,
     ):
@@ -220,15 +238,16 @@ class WandbLogger:
     def _init_wandb(
         self,
         project: str,
-        entity: Optional[str],
-        name: Optional[str],
-        tags: Optional[List[str]],
-        notes: Optional[str],
+        entity: str | None,
+        name: str | None,
+        tags: list[str] | None,
+        notes: str | None,
         mode: str,
         **kwargs,
     ) -> None:
         try:
             import wandb
+
             wandb.init(
                 project=project,
                 entity=entity,
@@ -244,25 +263,27 @@ class WandbLogger:
         except ImportError:
             logging.warning("wandb not available, WandbLogger disabled")
 
-    def log(self, data: Dict[str, Any], step: Optional[int] = None) -> None:
+    def log(self, data: dict[str, Any], step: int | None = None) -> None:
         """Log metrics and data."""
         if self._run is None:
             return
         step = step if step is not None else self._step
         import wandb
+
         wandb.log(data, step=step)
         self._step = step + 1
 
     def log_model(
         self,
-        model: "torch.nn.Module",
-        name: Optional[str] = None,
-        aliases: Optional[List[str]] = None,
+        model: torch.nn.Module,
+        name: str | None = None,
+        aliases: list[str] | None = None,
     ) -> None:
         """Log model as W&B artifact."""
         if self._run is None:
             return
         import wandb
+
         artifact = wandb.Artifact(
             name or "model",
             type="model",
@@ -270,6 +291,7 @@ class WandbLogger:
         )
         # Save model temporarily
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "model.pt"
             torch.save(model.state_dict(), path)
@@ -278,7 +300,7 @@ class WandbLogger:
 
     def watch(
         self,
-        model: "torch.nn.Module",
+        model: torch.nn.Module,
         log: str = "all",
         log_freq: int = 100,
     ) -> None:
@@ -286,12 +308,14 @@ class WandbLogger:
         if self._run is None:
             return
         import wandb
+
         wandb.watch(model, log=log, log_freq=log_freq)
 
     def finish(self) -> None:
         """Finish the W&B run."""
         if self._run:
             import wandb
+
             wandb.finish()
             self._run = None
 
@@ -303,8 +327,8 @@ class MlflowLogger:
         self,
         tracking_uri: str = "http://localhost:5000",
         experiment_name: str = "llm-finetuning",
-        run_name: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
+        run_name: str | None = None,
+        tags: dict[str, str] | None = None,
     ):
         self.tracking_uri = tracking_uri
         self.experiment_name = experiment_name
@@ -316,6 +340,7 @@ class MlflowLogger:
     def _init_mlflow(self) -> None:
         try:
             import mlflow
+
             mlflow.set_tracking_uri(self.tracking_uri)
             mlflow.set_experiment(self.experiment_name)
             self._client = mlflow.tracking.MlflowClient()
@@ -325,6 +350,7 @@ class MlflowLogger:
     def start_run(self) -> None:
         """Start MLflow run."""
         import mlflow
+
         self._active_run = mlflow.start_run(run_name=self.run_name)
         for key, value in self.tags.items():
             mlflow.set_tag(key, value)
@@ -332,40 +358,48 @@ class MlflowLogger:
     def end_run(self, status: str = "FINISHED") -> None:
         """End MLflow run."""
         import mlflow
+
         mlflow.end_run(status=status)
         self._active_run = None
 
     def log_param(self, key: str, value: Any) -> None:
         import mlflow
+
         mlflow.log_param(key, value)
 
-    def log_params(self, params: Dict[str, Any]) -> None:
+    def log_params(self, params: dict[str, Any]) -> None:
         import mlflow
+
         mlflow.log_params(params)
 
-    def log_metric(self, key: str, value: float, step: Optional[int] = None) -> None:
+    def log_metric(self, key: str, value: float, step: int | None = None) -> None:
         import mlflow
+
         mlflow.log_metric(key, value, step=step)
 
-    def log_metrics(self, metrics: Dict[str, float], step: Optional[int] = None) -> None:
+    def log_metrics(self, metrics: dict[str, float], step: int | None = None) -> None:
         import mlflow
+
         mlflow.log_metrics(metrics, step=step)
 
-    def log_artifact(self, local_path: str, artifact_path: Optional[str] = None) -> None:
+    def log_artifact(self, local_path: str, artifact_path: str | None = None) -> None:
         import mlflow
+
         mlflow.log_artifact(local_path, artifact_path)
 
-    def log_artifacts(self, local_dir: str, artifact_path: Optional[str] = None) -> None:
+    def log_artifacts(self, local_dir: str, artifact_path: str | None = None) -> None:
         import mlflow
+
         mlflow.log_artifacts(local_dir, artifact_path)
 
-    def log_model(self, model: "torch.nn.Module", artifact_path: str) -> None:
+    def log_model(self, model: torch.nn.Module, artifact_path: str) -> None:
         import mlflow.pytorch
+
         mlflow.pytorch.log_model(model, artifact_path)
 
 
 def setup_logging(
-    log_dir: Union[str, Path] = "./logs",
+    log_dir: str | Path = "./logs",
     level: str = "INFO",
     format_type: str = "json",
     console: bool = True,
@@ -375,7 +409,7 @@ def setup_logging(
 ) -> logging.Logger:
     """
     Setup comprehensive logging configuration.
-    
+
     Args:
         log_dir: Directory for log files
         level: Logging level
@@ -384,7 +418,7 @@ def setup_logging(
         file_rotation: Enable file rotation
         max_bytes: Max file size before rotation
         backup_count: Number of backup files
-        
+
     Returns:
         Configured root logger
     """
@@ -400,9 +434,7 @@ def setup_logging(
 
     formatters = {
         "json": StructuredFormatter(),
-        "text": logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        ),
+        "text": logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"),
         "colored": ColoredConsoleFormatter(),
     }
 
@@ -462,7 +494,7 @@ def setup_logging(
 class TrainingMetricsLogger:
     """Specialized logger for training metrics with structured output."""
 
-    def __init__(self, logger: Optional[logging.Logger] = None):
+    def __init__(self, logger: logging.Logger | None = None):
         self.logger = logger or logging.getLogger("training.metrics")
 
     def log_step(
@@ -471,11 +503,11 @@ class TrainingMetricsLogger:
         epoch: float,
         loss: float,
         learning_rate: float,
-        grad_norm: Optional[float] = None,
-        tokens_per_sec: Optional[float] = None,
-        samples_per_sec: Optional[float] = None,
-        gpu_memory_allocated: Optional[float] = None,
-        gpu_memory_reserved: Optional[float] = None,
+        grad_norm: float | None = None,
+        tokens_per_sec: float | None = None,
+        samples_per_sec: float | None = None,
+        gpu_memory_allocated: float | None = None,
+        gpu_memory_reserved: float | None = None,
         **extra,
     ) -> None:
         """Log training step metrics."""
@@ -500,7 +532,7 @@ class TrainingMetricsLogger:
         self,
         step: int,
         eval_loss: float,
-        metrics: Dict[str, float],
+        metrics: dict[str, float],
         **extra,
     ) -> None:
         """Log evaluation metrics."""
@@ -523,7 +555,7 @@ class TrainingMetricsLogger:
     ) -> None:
         """Log checkpoint save."""
         self.logger.info(
-            f"Checkpoint saved",
+            "Checkpoint saved",
             extra={
                 "log_metrics": True,
                 "step": step,
@@ -540,7 +572,7 @@ class TrainingMetricsLogger:
     ) -> None:
         """Log learning rate schedule."""
         self.logger.info(
-            f"Learning rate updated",
+            "Learning rate updated",
             extra={
                 "log_metrics": True,
                 "step": step,
@@ -550,8 +582,9 @@ class TrainingMetricsLogger:
         )
 
 
-def log_execution_time(logger: Optional[logging.Logger] = None):
+def log_execution_time(logger: logging.Logger | None = None):
     """Decorator to log function execution time."""
+
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -573,7 +606,9 @@ def log_execution_time(logger: Optional[logging.Logger] = None):
                     exc_info=True,
                 )
                 raise
+
         return wrapper
+
     return decorator
 
 
@@ -582,7 +617,7 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
 
 
-def log_gpu_memory(logger: Optional[logging.Logger] = None, prefix: str = ""):
+def log_gpu_memory(logger: logging.Logger | None = None, prefix: str = ""):
     """Log current GPU memory usage."""
     log = logger or logging.getLogger(__name__)
     if TORCH_AVAILABLE and torch.cuda.is_available():
@@ -597,22 +632,22 @@ def log_gpu_memory(logger: Optional[logging.Logger] = None, prefix: str = ""):
 
 def configure_experiment_logging(
     experiment_name: str,
-    log_dir: Union[str, Path] = "./logs",
+    log_dir: str | Path = "./logs",
     level: str = "INFO",
     use_tensorboard: bool = False,
     use_wandb: bool = False,
     use_mlflow: bool = False,
-    wandb_config: Optional[Dict[str, Any]] = None,
-    mlflow_config: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    wandb_config: dict[str, Any] | None = None,
+    mlflow_config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """
     Configure logging for an experiment with multiple backends.
-    
+
     Returns:
         Dictionary with logger instances
     """
     loggers = {}
-    
+
     # Setup base logging
     base_logger = setup_logging(
         log_dir=Path(log_dir) / experiment_name,
@@ -622,9 +657,7 @@ def configure_experiment_logging(
     loggers["base"] = base_logger
 
     # Training metrics logger
-    loggers["metrics"] = TrainingMetricsLogger(
-        logging.getLogger("training.metrics")
-    )
+    loggers["metrics"] = TrainingMetricsLogger(logging.getLogger("training.metrics"))
 
     # TensorBoard
     tb_logger = None

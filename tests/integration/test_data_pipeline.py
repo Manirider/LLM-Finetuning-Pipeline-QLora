@@ -1,9 +1,6 @@
 """Integration tests for the data pipeline."""
 
-import json
-import os
 import sys
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
@@ -15,18 +12,10 @@ from src.data_pipeline import (
     AlpacaFormatter,
     ChatMLFormatter,
     DataPipeline,
-    DatasetStatistics,
     Llama3Formatter,
     PlainFormatter,
     VicunaFormatter,
     ZephyrFormatter,
-    get_formatter,
-)
-from src.config import (
-    DataConfigComplete,
-    DatasetConfig,
-    PromptTemplateConfig,
-    ColumnMappingConfig,
 )
 
 
@@ -124,6 +113,7 @@ class TestFormatterIntegration:
     def test_custom_formatter(self):
         """Test Custom formatter."""
         from src.data_pipeline import CustomFormatter
+
         formatter = CustomFormatter(
             template="{instruction} -> {output}",
             template_with_input="{instruction} [{input}] -> {output}",
@@ -184,7 +174,10 @@ class TestDataPipelineIntegration:
                 "cleaning": {"enabled": True, "strip_whitespace": True},
                 "formatting": {"enabled": True, "template": "alpaca", "formatted_field": "text"},
                 "tokenization": {"enabled": False},
-                "splitting": {"enabled": True, "ratios": {"train": 0.8, "validation": 0.1, "test": 0.1}},
+                "splitting": {
+                    "enabled": True,
+                    "ratios": {"train": 0.8, "validation": 0.1, "test": 0.1},
+                },
             },
             "output": {
                 "output_dir": str(temp_dir / "processed"),
@@ -220,41 +213,45 @@ class TestDataPipelineIntegration:
             "output": {"output_dir": str(temp_dir / "processed")},
         }
         pipeline = DataPipeline(config_dict)
-        
+
         with patch.object(pipeline, "load_local_datasets", return_value={}):
             datasets = pipeline.download_datasets()
-        
+
         assert "alpaca" in datasets
         mock_load_dataset.assert_called_once()
 
     def test_apply_column_mapping(self, temp_dir):
         """Test column mapping application."""
         from datasets import Dataset
-        
+
         config_dict = {
-            "datasets": [{
-                "name": "test",
-                "path": "test",
-                "column_mapping": {
-                    "instruction": "prompt",
-                    "input": "context",
-                    "output": "completion",
-                },
-            }],
+            "datasets": [
+                {
+                    "name": "test",
+                    "path": "test",
+                    "column_mapping": {
+                        "instruction": "prompt",
+                        "input": "context",
+                        "output": "completion",
+                    },
+                }
+            ],
             "prompt_templates": {},
             "default_template": "alpaca",
             "processing": {},
             "output": {"output_dir": str(temp_dir)},
         }
         pipeline = DataPipeline(config_dict)
-        
-        ds = Dataset.from_dict({
-            "prompt": ["test"],
-            "context": [""],
-            "completion": ["result"],
-        })
+
+        ds = Dataset.from_dict(
+            {
+                "prompt": ["test"],
+                "context": [""],
+                "completion": ["result"],
+            }
+        )
         result = pipeline.apply_column_mapping(ds, pipeline.config.datasets[0].column_mapping)
-        
+
         assert "instruction" in result.column_names
         assert "input" in result.column_names
         assert "output" in result.column_names
@@ -262,7 +259,7 @@ class TestDataPipelineIntegration:
     def test_validate_dataset(self, temp_dir):
         """Test dataset validation."""
         from datasets import Dataset
-        
+
         config_dict = {
             "datasets": [{"name": "test", "path": "test"}],
             "prompt_templates": {},
@@ -279,13 +276,15 @@ class TestDataPipelineIntegration:
             "output": {"output_dir": str(temp_dir)},
         }
         pipeline = DataPipeline(config_dict)
-        
+
         # Valid dataset
-        ds = Dataset.from_dict({
-            "instruction": ["Valid instruction", "Short"],
-            "input": ["", ""],
-            "output": ["Valid output", "Ok"],
-        })
+        ds = Dataset.from_dict(
+            {
+                "instruction": ["Valid instruction", "Short"],
+                "input": ["", ""],
+                "output": ["Valid output", "Ok"],
+            }
+        )
         result = pipeline.validate_dataset(ds, "test")
         assert len(result) == 1  # Second filtered out (too short)
         assert result[0]["instruction"] == "Valid instruction"
@@ -293,7 +292,7 @@ class TestDataPipelineIntegration:
     def test_clean_dataset(self, temp_dir):
         """Test dataset cleaning."""
         from datasets import Dataset
-        
+
         config_dict = {
             "datasets": [{"name": "test", "path": "test"}],
             "prompt_templates": {},
@@ -310,21 +309,23 @@ class TestDataPipelineIntegration:
             "output": {"output_dir": str(temp_dir)},
         }
         pipeline = DataPipeline(config_dict)
-        
-        ds = Dataset.from_dict({
-            "instruction": ["  test  ", "  another  "],
-            "input": ["", ""],
-            "output": ["  result  ", "  more  "],
-        })
+
+        ds = Dataset.from_dict(
+            {
+                "instruction": ["  test  ", "  another  "],
+                "input": ["", ""],
+                "output": ["  result  ", "  more  "],
+            }
+        )
         result = pipeline.clean_dataset(ds, "test")
-        
+
         assert result["instruction"][0] == "test"
         assert result["output"][0] == "result"
 
     def test_format_dataset(self, temp_dir):
         """Test dataset formatting."""
         from datasets import Dataset
-        
+
         config_dict = {
             "datasets": [{"name": "test", "path": "test"}],
             "prompt_templates": {
@@ -346,14 +347,16 @@ class TestDataPipelineIntegration:
             "output": {"output_dir": str(temp_dir)},
         }
         pipeline = DataPipeline(config_dict)
-        
-        ds = Dataset.from_dict({
-            "instruction": ["Test instruction"],
-            "input": [""],
-            "output": ["Test output"],
-        })
+
+        ds = Dataset.from_dict(
+            {
+                "instruction": ["Test instruction"],
+                "input": [""],
+                "output": ["Test output"],
+            }
+        )
         result = pipeline.format_dataset(ds, "test")
-        
+
         assert "text" in result.column_names
         assert "### Instruction:" in result["text"][0]
         assert "### Response:" in result["text"][0]
@@ -361,7 +364,7 @@ class TestDataPipelineIntegration:
     def test_split_dataset(self, temp_dir):
         """Test dataset splitting."""
         from datasets import Dataset
-        
+
         config_dict = {
             "datasets": [{"name": "test", "path": "test"}],
             "prompt_templates": {},
@@ -376,10 +379,10 @@ class TestDataPipelineIntegration:
             "output": {"output_dir": str(temp_dir)},
         }
         pipeline = DataPipeline(config_dict)
-        
+
         ds = Dataset.from_dict({"text": [f"sample {i}" for i in range(100)]})
         splits = pipeline.split_dataset(ds)
-        
+
         assert "train" in splits
         assert "validation" in splits
         assert "test" in splits
@@ -390,7 +393,7 @@ class TestDataPipelineIntegration:
     def test_compute_statistics(self, temp_dir):
         """Test statistics computation."""
         from datasets import Dataset
-        
+
         config_dict = {
             "datasets": [{"name": "test", "path": "test"}],
             "prompt_templates": {},
@@ -401,21 +404,23 @@ class TestDataPipelineIntegration:
             "output": {"output_dir": str(temp_dir)},
         }
         pipeline = DataPipeline(config_dict)
-        
-        ds = Dataset.from_dict({
-            "instruction": ["Short", "Medium length instruction", "A" * 100],
-            "input": ["", "", ""],
-            "output": ["Out", "Medium output text", "B" * 50],
-        })
+
+        ds = Dataset.from_dict(
+            {
+                "instruction": ["Short", "Medium length instruction", "A" * 100],
+                "input": ["", "", ""],
+                "output": ["Out", "Medium output text", "B" * 50],
+            }
+        )
         stats = pipeline.compute_statistics(ds, "test")
-        
+
         assert stats.num_samples == 3
         assert len(stats.instruction_lengths) == 3
 
     def test_export_jsonl(self, temp_dir):
         """Test JSONL export."""
         from datasets import Dataset
-        
+
         config_dict = {
             "datasets": [{"name": "test", "path": "test"}],
             "prompt_templates": {},
@@ -424,11 +429,11 @@ class TestDataPipelineIntegration:
             "output": {"output_dir": str(temp_dir)},
         }
         pipeline = DataPipeline(config_dict)
-        
+
         ds = Dataset.from_dict({"text": ["a", "b", "c"]})
         output_path = temp_dir / "test.jsonl"
         pipeline.export_jsonl(ds, output_path)
-        
+
         assert output_path.exists()
         with open(output_path) as f:
             lines = f.readlines()
@@ -437,7 +442,7 @@ class TestDataPipelineIntegration:
     def test_export_arrow(self, temp_dir):
         """Test Arrow export."""
         from datasets import Dataset
-        
+
         config_dict = {
             "datasets": [{"name": "test", "path": "test"}],
             "prompt_templates": {},
@@ -446,11 +451,11 @@ class TestDataPipelineIntegration:
             "output": {"output_dir": str(temp_dir)},
         }
         pipeline = DataPipeline(config_dict)
-        
+
         ds = Dataset.from_dict({"text": ["a", "b", "c"]})
         output_path = temp_dir / "test_arrow"
         pipeline.export_arrow(ds, output_path)
-        
+
         assert output_path.exists()
         assert (output_path / "dataset_info.json").exists()
 

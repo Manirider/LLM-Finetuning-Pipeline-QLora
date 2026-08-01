@@ -2,9 +2,6 @@
 
 import json
 import logging
-from pathlib import Path
-
-import pytest
 
 from src.logger import (
     ColoredConsoleFormatter,

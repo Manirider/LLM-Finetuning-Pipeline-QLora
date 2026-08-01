@@ -1,8 +1,6 @@
 """Integration tests for training module."""
 
-import os
 import sys
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
@@ -10,29 +8,25 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+from src.config import (
+    CallbacksConfig,
+    CheckpointConfig,
+    EarlyStoppingConfig,
+    LoggingCallbackConfig,
+    ProfilerConfig,
+    RuntimeConfig,
+    TrainerConfig,
+)
+from src.config import SFTConfig as ConfigSFTConfig
 from src.train import (
     EarlyStoppingCallback,
     GradientNormCallback,
-    GPUMemoryCallback,
     LearningRateCallback,
-    ThroughputCallback,
     ProfilerCallback,
+    ThroughputCallback,
     create_callbacks,
-    create_training_arguments,
     create_sft_config,
-)
-from src.config import (
-    TrainingConfig,
-    TrainerConfig,
-    LoRAConfig,
-    CallbacksConfig,
-    EarlyStoppingConfig,
-    CheckpointConfig,
-    LoggingCallbackConfig,
-    ProfilerConfig,
-    SFTConfig as ConfigSFTConfig,
-    RuntimeConfig,
-    ExperimentConfig,
+    create_training_arguments,
 )
 
 
@@ -47,29 +41,29 @@ class TestCallbacksIntegration:
             metric_for_best="eval_loss",
             greater_is_better=False,
         )
-        
+
         state = MagicMock()
         state.global_step = 100
         control = MagicMock()
         args = MagicMock()
-        
+
         # First evaluation - sets best metric
         metrics = {"eval_loss": 1.0}
         callback.on_evaluate(args, state, control, metrics=metrics)
         assert callback.best_metric == 1.0
         assert callback.counter == 0
-        
+
         # Improvement - resets counter
         metrics = {"eval_loss": 0.8}
         callback.on_evaluate(args, state, control, metrics=metrics)
         assert callback.best_metric == 0.8
         assert callback.counter == 0
-        
+
         # No improvement - increments counter
         metrics = {"eval_loss": 0.85}
         callback.on_evaluate(args, state, control, metrics=metrics)
         assert callback.counter == 1
-        
+
         # No improvement - triggers early stop
         metrics = {"eval_loss": 0.9}
         callback.on_evaluate(args, state, control, metrics=metrics)
@@ -84,17 +78,17 @@ class TestCallbacksIntegration:
             metric_for_best="accuracy",
             greater_is_better=True,
         )
-        
+
         state = MagicMock()
         state.global_step = 100
         control = MagicMock()
         args = MagicMock()
-        
+
         # First evaluation
         metrics = {"accuracy": 0.5}
         callback.on_evaluate(args, state, control, metrics=metrics)
         assert callback.best_metric == 0.5
-        
+
         # Improvement (higher is better)
         metrics = {"accuracy": 0.6}
         callback.on_evaluate(args, state, control, metrics=metrics)
@@ -104,51 +98,51 @@ class TestCallbacksIntegration:
     def test_gradient_norm_callback(self, capfd):
         """Test gradient norm callback."""
         callback = GradientNormCallback(log_freq=10)
-        
+
         # Create model with gradients
         param = MagicMock()
         param.grad = MagicMock()
         param.grad.data.norm.return_value = 1.5
-        
+
         model = MagicMock()
         model.parameters.return_value = [param]
-        
+
         state = MagicMock()
         state.global_step = 10
         args = MagicMock()
         control = MagicMock()
-        
+
         callback.on_step_end(args, state, control, model=model)
-        
+
         out, _ = capfd.readouterr()
         assert "grad_norm" in out
 
     def test_learning_rate_callback(self, capfd):
         """Test learning rate callback."""
         callback = LearningRateCallback(log_freq=10)
-        
+
         optimizer = MagicMock()
         optimizer.param_groups = [{"lr": 2e-4}]
-        
+
         state = MagicMock()
         state.global_step = 10
         args = MagicMock()
         control = MagicMock()
-        
+
         callback.on_step_end(args, state, control, optimizer=optimizer)
-        
+
         out, _ = capfd.readouterr()
         assert "learning_rate" in out
 
     def test_throughput_callback(self):
         """Test throughput callback."""
         callback = ThroughputCallback(log_freq=10)
-        
+
         state = MagicMock()
         state.global_step = 10
         args = MagicMock()
         control = MagicMock()
-        
+
         # Should not crash
         callback.on_step_end(args, state, control)
 
@@ -159,11 +153,11 @@ class TestCallbacksIntegration:
             profile_dir=str(profiler_dir),
             profile_steps=3,
         )
-        
+
         args = MagicMock()
         state = MagicMock()
         control = MagicMock()
-        
+
         # Should not crash on train begin/end
         callback.on_train_begin(args, state, control)
         callback.on_step_end(args, state, control)
@@ -187,9 +181,9 @@ class TestCreateCallbacks:
             ),
             profiler=ProfilerConfig(enabled=False),
         )
-        
+
         callbacks = create_callbacks(callbacks_config)
-        
+
         callback_types = [type(c).__name__ for c in callbacks]
         assert "EarlyStoppingCallback" in callback_types
         assert "GradientNormCallback" in callback_types
@@ -205,7 +199,7 @@ class TestCreateCallbacks:
             logging=LoggingCallbackConfig(enabled=False),
             profiler=ProfilerConfig(enabled=False),
         )
-        
+
         callbacks = create_callbacks(callbacks_config)
         assert len(callbacks) == 0
 
@@ -216,6 +210,7 @@ class TestTrainingArguments:
     def test_create_training_arguments(self, temp_dir):
         """Test creating TrainingArguments from config."""
         import torch
+
         has_cuda = torch.cuda.is_available()
         trainer_config = TrainerConfig(
             output_dir=str(temp_dir),
@@ -235,11 +230,11 @@ class TestTrainingArguments:
             report_to=["tensorboard"],
             run_name="test-run",
         )
-        
+
         runtime_config = RuntimeConfig(bf16=True, fp16=False)
-        
+
         args = create_training_arguments(trainer_config, str(temp_dir), runtime_config)
-        
+
         assert args.output_dir == str(temp_dir)
         assert args.num_train_epochs == 3
         assert args.per_device_train_batch_size == 4
@@ -258,13 +253,13 @@ class TestTrainingArguments:
             packing=False,
             dataset_text_field="text",
         )
-        
+
         tokenizer = MagicMock()
         tokenizer.pad_token = "<pad>"
         tokenizer.eos_token = "</s>"
-        
+
         sft_config_obj = create_sft_config(sft_config, tokenizer)
-        
+
         assert sft_config_obj.max_seq_length == 2048
         assert sft_config_obj.packing is False
         assert sft_config_obj.dataset_text_field == "text"
@@ -337,24 +332,24 @@ class TestTrainingIntegration:
         mock_config.training.trainer.ddp_find_unused_parameters = False
         mock_config.training.trainer.ddp_bucket_cap_mb = 25
         mock_config.training.trainer.ddp_timeout = 1800
-        
+
         mock_config.training.callbacks = MagicMock()
         mock_config.training.callbacks.early_stopping = MagicMock(enabled=False)
         mock_config.training.callbacks.logging = MagicMock(enabled=False)
         mock_config.training.callbacks.profiler = MagicMock(enabled=False)
-        
+
         mock_config.training.sft = MagicMock()
         mock_config.training.sft.max_seq_length = 512
         mock_config.training.sft.packing = False
         mock_config.training.sft.dataset_text_field = "text"
-        
+
         mock_config.model = MagicMock()
         mock_config.model.model = MagicMock()
         mock_config.model.model.model_name_or_path = "test-model"
         mock_config.model.tokenizer = MagicMock()
-        
+
         mock_config_manager.return_value = mock_config
-        
+
         # Mock model and tokenizer
         mock_model = MagicMock()
         mock_tokenizer = MagicMock()
@@ -362,20 +357,18 @@ class TestTrainingIntegration:
             model=mock_model,
             tokenizer=mock_tokenizer,
         )
-        
+
         # Mock datasets
         mock_train_ds = MagicMock()
         mock_train_ds.__len__ = Mock(return_value=100)
         mock_eval_ds = MagicMock()
         mock_eval_ds.__len__ = Mock(return_value=20)
-        
-        mock_processed = {
-            "test": MagicMock(train=mock_train_ds, validation=mock_eval_ds)
-        }
+
+        mock_processed = {"test": MagicMock(train=mock_train_ds, validation=mock_eval_ds)}
         mock_pipeline = MagicMock()
         mock_pipeline.process.return_value = mock_processed
         mock_data_pipeline.return_value = mock_pipeline
-        
+
         # Mock trainer
         mock_trainer_instance = MagicMock()
         mock_trainer_instance.train = MagicMock()
@@ -383,14 +376,14 @@ class TestTrainingIntegration:
         mock_trainer_instance.state.best_model_checkpoint = str(temp_dir / "best")
         mock_trainer_instance.evaluate = MagicMock(return_value={"eval_loss": 1.0})
         mock_sft_trainer.return_value = mock_trainer_instance
-        
+
         # Import and run (would be actual train.main() in real test)
         from src.train import (
-            create_training_arguments,
             create_sft_config,
             create_trainer,
+            create_training_arguments,
         )
-        
+
         # Verify imports work
         assert create_training_arguments is not None
         assert create_sft_config is not None

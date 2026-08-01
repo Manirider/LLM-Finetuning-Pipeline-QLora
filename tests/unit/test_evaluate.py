@@ -1,19 +1,17 @@
 """Unit tests for src/evaluate.py."""
 
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, Mock
 
 import pytest
 from datasets import Dataset
-
 from src.evaluate import (
-    EvaluationReport,
     GenerationConfig,
     GenerationResult,
     ModelEvaluator,
     PromptFormatter,
     create_argument_parser,
 )
-from src.metrics import MetricResult, MetricsCalculator
+from src.metrics import MetricsCalculator
 
 
 @pytest.fixture
@@ -43,9 +41,7 @@ class TestPromptFormatter:
         assert "Write a story" in prompt
 
     def test_custom_template(self):
-        formatter = PromptFormatter(
-            custom_template="Input: {instruction}\nOutput: {output}"
-        )
+        formatter = PromptFormatter(custom_template="Input: {instruction}\nOutput: {output}")
         prompt = formatter.format(instruction="Hello")
         assert "Input: Hello" in prompt
 
@@ -116,11 +112,13 @@ class TestModelEvaluator:
         mock_model.generate.return_value = [gen_output]
         mock_tokenizer.decode.return_value = "Response"
 
-        dataset = Dataset.from_dict({
-            "instruction": ["Q1", "Q2"],
-            "input": ["", ""],
-            "output": ["A1", "A2"],
-        })
+        dataset = Dataset.from_dict(
+            {
+                "instruction": ["Q1", "Q2"],
+                "input": ["", ""],
+                "output": ["A1", "A2"],
+            }
+        )
 
         results, preds, refs = evaluator.evaluate_dataset(dataset, max_samples=2)
 
@@ -137,11 +135,13 @@ class TestModelEvaluator:
         mock_model.generate.return_value = [gen_output]
         mock_tokenizer.decode.return_value = "Response"
 
-        dataset = Dataset.from_dict({
-            "instruction": ["Q"] * 5,
-            "input": [""] * 5,
-            "output": ["A"] * 5,
-        })
+        dataset = Dataset.from_dict(
+            {
+                "instruction": ["Q"] * 5,
+                "input": [""] * 5,
+                "output": ["A"] * 5,
+            }
+        )
 
         perf = evaluator.benchmark_performance(dataset, num_warmup=1, num_runs=3)
         assert perf is not None

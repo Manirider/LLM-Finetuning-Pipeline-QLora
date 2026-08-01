@@ -3,18 +3,13 @@
 import time
 from unittest.mock import MagicMock
 
-import pytest
 import torch
-
 from src.callbacks import (
     BaseCallback,
-    CallbackManager,
     CallbackState,
     EarlyStoppingCallback,
     GradientNormCallback,
     LoggingCallback,
-    ModelCheckpointCallback,
-    ProfilerCallback,
     ThroughputCallback,
 )
 
@@ -81,7 +76,9 @@ class TestEarlyStoppingCallback:
         assert cb._counter == 0
 
     def test_no_improvement_increments_counter(self):
-        cb = EarlyStoppingCallback(patience=2, threshold=0.01, greater_is_better=False, verbose=False)
+        cb = EarlyStoppingCallback(
+            patience=2, threshold=0.01, greater_is_better=False, verbose=False
+        )
         control = MagicMock()
         state = MagicMock()
 
@@ -94,7 +91,9 @@ class TestEarlyStoppingCallback:
         assert control.should_training_stop is True
 
     def test_greater_is_better(self):
-        cb = EarlyStoppingCallback(patience=2, threshold=0.05, greater_is_better=True, verbose=False)
+        cb = EarlyStoppingCallback(
+            patience=2, threshold=0.05, greater_is_better=True, verbose=False
+        )
         control = MagicMock()
         state = MagicMock()
 
