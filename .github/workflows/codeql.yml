@@ -33,8 +33,16 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
-          queries: +security-and-quality
-          config-file: .github/codeql-config.yml
+          queries: security-and-quality
+          paths: |
+            src
+          paths-ignore: |
+            tests
+            docs
+            notebooks
+            scripts
+            **/test_*.py
+            **/*_test.py
 
       - name: Set up Python
         uses: actions/setup-python@v5

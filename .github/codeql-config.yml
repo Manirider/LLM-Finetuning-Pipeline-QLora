@@ -3,13 +3,16 @@ name: "CodeQL Configuration"
 
 # Paths to include in analysis
 paths:
-  - src
+  - "src"
 
 # Paths to exclude from analysis
 paths-ignore:
-  - tests
-  - docs
-  - notebooks
-  - scripts
+  - "tests"
+  - "docs"
+  - "notebooks"
+  - "scripts"
   - "**/test_*.py"
   - "**/*_test.py"
+
+queries:
+  - uses: security-and-quality
