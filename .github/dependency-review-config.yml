@@ -1,0 +1,66 @@
+# Dependency Review Configuration
+
+# Packages to ignore (false positives or acceptable risks)
+ignore-packages:
+  - name: "torch"
+    reason: "Core ML framework, updates tested separately"
+  - name: "transformers"
+    reason: "Core ML framework, updates tested separately"
+  - name: "datasets"
+    reason: "Core ML framework, updates tested separately"
+
+# Allowlist for specific packages/versions
+allow-packages:
+  - name: "numpy"
+    version: ">=1.24.0"
+  - name: "pandas"
+    version: ">=2.0.0"
+
+# Deny list - packages/versions that should never be used
+deny-packages:
+  - name: "pillow"
+    version: "<9.0.0"
+    reason: "Security vulnerabilities in older versions"
+  - name: "urllib3"
+    version: "<1.26.0"
+    reason: "Security vulnerabilities in older versions"
+  - name: "requests"
+    version: "<2.28.0"
+    reason: "Security vulnerabilities in older versions"
+
+# Configuration for severity levels
+severity:
+  # Fail on medium severity or higher
+  fail-on: medium
+  # Also fail on low if it's a direct dependency
+  fail-on-low-direct: true
+
+# Licenses to allow/deny
+licenses:
+  allow:
+    - MIT
+    - Apache-2.0
+    - BSD-2-Clause
+    - BSD-3-Clause
+    - ISC
+    - Python-2.0
+    - MPL-2.0
+  deny:
+    - GPL-2.0
+    - GPL-3.0
+    - AGPL-3.0
+    - SSPL-1.0
+
+# Package sources to trust
+sources:
+  - pypi.org
+  - github.com
+
+# Scope of review
+scope:
+  # Review production dependencies
+  production: true
+  # Also review development dependencies
+  development: true
+  # Skip optional dependencies
+  optional: false

@@ -1,0 +1,439 @@
+# Model Configuration
+# Model architecture, quantization, tokenizer, and loading settings
+
+# =============================================================================
+# BASE MODEL CONFIGURATION
+# =============================================================================
+model:
+  # Model Identity
+  model_name_or_path: "meta-llama/Meta-Llama-3-8B-Instruct"
+  model_revision: "main"
+  model_cache_dir: null
+  trust_remote_code: false
+  use_auth_token: true
+
+  # Architecture
+  model_type: "llama"
+  architecture: "LlamaForCausalLM"
+  config_class: "LlamaConfig"
+  hidden_size: 4096
+  intermediate_size: 14336
+  num_hidden_layers: 32
+  num_attention_heads: 32
+  num_key_value_heads: 8
+  max_position_embeddings: 8192
+  rms_norm_eps: 1.0e-5
+  rope_theta: 500000.0
+  rope_scaling: null
+  vocab_size: 128256
+  pad_token_id: null
+  bos_token_id: 128000
+  eos_token_id: 128001
+  tie_word_embeddings: false
+
+  # Torch Dtype
+  torch_dtype: "bfloat16"
+  torch_dtype_str: "bfloat16"
+  # Options: "float32", "float16", "bfloat16", "float32", "auto"
+
+  # Device Mapping
+  device_map: "auto"
+  # Options: "auto", "balanced", "balanced_low_0", "sequential", "cpu", "disk"
+  max_memory: null
+  # Example: {0: "24GB", "cpu": "32GB"}
+  offload_folder: "./offload"
+  offload_state_dict: false
+  offload_buffers: false
+
+  # Memory Optimization
+  low_cpu_mem_usage: true
+  use_safetensors: true
+  variant: null
+
+  # Attention
+  attn_implementation: "flash_attention_2"
+  # Options: "eager", "sdpa", "flash_attention_2"
+  use_flash_attention_2: true
+  flash_attention_version: 2
+  _attn_implementation: "flash_attention_2"
+
+  # Gradient Checkpointing
+  gradient_checkpointing: true
+  gradient_checkpointing_kwargs:
+    use_reentrant: false
+
+  # Cache
+  use_cache: false
+  # Set to false for training, true for inference
+
+  # Quantization (overrides in quantization section)
+  quantization_config: null
+  load_in_8bit: false
+  load_in_4bit: true
+
+# =============================================================================
+# TOKENIZER CONFIGURATION
+# =============================================================================
+tokenizer:
+  # Tokenizer Identity
+  tokenizer_name_or_path: null
+  # If null, uses model_name_or_path
+  tokenizer_revision: "main"
+  tokenizer_cache_dir: null
+  use_auth_token: true
+
+  # Tokenizer Settings
+  use_fast: true
+  padding_side: "right"
+  # Options: "left", "right"
+  truncation_side: "right"
+  # Options: "left", "right"
+  model_max_length: 4096
+  # Max sequence length for tokenizer
+
+  # Special Tokens
+  pad_token: null
+  # If null, uses eos_token
+  eos_token: null
+  # If null, uses tokenizer default
+  bos_token: null
+  unk_token: null
+  sep_token: null
+  cls_token: null
+  mask_token: null
+
+  # Additional Special Tokens
+  additional_special_tokens: []
+
+  # Chat Template
+  chat_template: null
+  # If null, uses tokenizer default
+  chat_template_name: "llama3"
+  # Options: "llama3", "chatml", "vicuna", "alpaca", "zephyr", "custom"
+
+  # Tokenizer kwargs
+  tokenizer_kwargs:
+    clean_up_tokenization_spaces: true
+    add_special_tokens: true
+    return_token_type_ids: false
+
+# =============================================================================
+# QUANTIZATION CONFIGURATION (BitsAndBytes)
+# =============================================================================
+quantization:
+  # 4-bit Quantization (NF4) - Recommended for QLoRA
+  load_in_4bit: true
+  bnb_4bit_quant_type: "nf4"
+  # Options: "fp4", "nf4"
+  bnb_4bit_compute_dtype: "bfloat16"
+  # Options: "float16", "bfloat16", "float32"
+  bnb_4bit_use_double_quant: true
+  bnb_4bit_quant_storage: "uint8"
+  # Storage dtype for 4-bit weights
+
+  # 8-bit Quantization
+  load_in_8bit: false
+  llm_int8_threshold: 6.0
+  llm_int8_has_fp16_weight: false
+  llm_int8_skip_modules: []
+  # Modules to skip quantization (e.g., ["lm_head", "embed_tokens"])
+  llm_int8_enable_fp32_cpu_offload: false
+
+  # Advanced
+  quantization_config_class: "BitsAndBytesConfig"
+  bnb_4bit_quant_storage_dtype: "uint8"
+
+# =============================================================================
+# LoRA / PEFT CONFIGURATION
+# =============================================================================
+peft:
+  # LoRA Type
+  peft_type: "LORA"
+  # Options: "LORA", "ADALORA", "IA3", "PROMPT_TUNING", "PREFIX_TUNING"
+
+  # LoRA Config
+  lora:
+    r: 64
+    lora_alpha: 16
+    lora_dropout: 0.05
+    use_rslora: true
+    use_dora: false
+    init_lora_weights: "gaussian"
+    # Options: "gaussian", "loftq", "pissa", "olora", true, false
+
+    # Target Modules (Llama/Mistral)
+    target_modules:
+      - "q_proj"
+      - "k_proj"
+      - "v_proj"
+      - "o_proj"
+      - "gate_proj"
+      - "up_proj"
+      - "down_proj"
+
+    # Bias
+    bias: "none"
+    # Options: "none", "all", "lora_only"
+
+    # Task Type
+    task_type: "CAUSAL_LM"
+    inference_mode: false
+
+    # Advanced
+    layers_to_transform: null
+    layers_pattern: null
+    rank_pattern: {}
+    alpha_pattern: {}
+
+    # Megatron
+    megatron_config: null
+    megatron_core: false
+
+    # LoRA+
+    lora_plus_scale: null
+    lora_plus_lr_ratio: null
+
+  # AdaLoRA Config
+  adalora:
+    target_r: 8
+    init_r: 12
+    tinit: 0
+    tfinal: 0
+    deltaT: 10
+    beta1: 0.85
+    beta2: 0.85
+    orth_reg_weight: 0.5
+    total_step: null
+    rank_pattern: {}
+    alpha_pattern: {}
+
+  # IA3 Config
+  ia3:
+    target_modules: []
+    feedforward_modules: []
+    fan_in_fan_out: false
+    init_ia3_weights: true
+
+# =============================================================================
+# MODEL LOADING OPTIONS
+# =============================================================================
+loading:
+  # Revision & Auth
+  revision: "main"
+  token: null
+  use_auth_token: true
+
+  # Cache
+  cache_dir: null
+  force_download: false
+  resume_download: null
+  proxies: null
+  local_files_only: false
+
+  # Offload
+  offload_folder: "./offload"
+  offload_state_dict: false
+  offload_buffers: false
+
+  # Memory
+  max_memory: null
+  low_cpu_mem_usage: true
+
+  # Safetensors
+  use_safetensors: true
+  variant: null
+
+  # Torch
+  torch_dtype: "bfloat16"
+  device_map: "auto"
+
+  # Attention
+  attn_implementation: "flash_attention_2"
+  use_flash_attention_2: true
+
+  # Gradient Checkpointing
+  gradient_checkpointing: true
+
+  # Quantization
+  load_in_8bit: false
+  load_in_4bit: true
+
+  # PEFT
+  peft_config: null
+  is_trainable: true
+
+# =============================================================================
+# MODEL SAVING / MERGING
+# =============================================================================
+saving:
+  # Adapter Saving
+  save_adapter: true
+  adapter_path: "./adapters/best"
+  save_tokenizer: true
+
+  # Merged Model
+  merge_and_unload: false
+  merged_model_path: "./artifacts/models/merged/v1.0.0"
+  merged_dtype: "bfloat16"
+  safe_serialization: true
+  max_shard_size: "5GB"
+
+  # Push to Hub
+  push_to_hub: false
+  hub_model_id: ""
+  hub_private_repo: false
+  hub_token: null
+  commit_message: "Upload model"
+
+# =============================================================================
+# INFERENCE CONFIGURATION
+# =============================================================================
+inference:
+  # Generation
+  max_new_tokens: 512
+  min_new_tokens: 1
+  do_sample: true
+  temperature: 0.7
+  top_p: 0.9
+  top_k: 50
+  repetition_penalty: 1.1
+  length_penalty: 1.0
+  no_repeat_ngram_size: 3
+  early_stopping: true
+  num_beams: 1
+  num_return_sequences: 1
+
+  # Sampling
+  typical_p: 1.0
+  epsilon_cutoff: 0.0
+  eta_cutoff: 0.0
+  diversity_penalty: 0.0
+  penalty_alpha: 0.0
+  min_p: 0.0
+
+  # Cache
+  use_cache: true
+  return_dict_in_generate: false
+  output_scores: false
+  output_attentions: false
+  output_hidden_states: false
+
+  # Performance
+  batch_size: 4
+  max_batch_size: 32
+  pad_token_id: null
+  eos_token_id: null
+  use_flash_attention_2: true
+
+  # Streaming
+  stream: false
+  stream_options: null
+
+# =============================================================================
+# SUPPORTED MODEL PRESETS
+# =============================================================================
+model_presets:
+  llama3_8b_instruct:
+    model_name_or_path: "meta-llama/Meta-Llama-3-8B-Instruct"
+    tokenizer_name_or_path: null
+    torch_dtype: "bfloat16"
+    attn_implementation: "flash_attention_2"
+    target_modules:
+      - "q_proj"
+      - "k_proj"
+      - "v_proj"
+      - "o_proj"
+      - "gate_proj"
+      - "up_proj"
+      - "down_proj"
+    chat_template_name: "llama3"
+
+  llama3_8b_base:
+    model_name_or_path: "meta-llama/Meta-Llama-3-8B"
+    tokenizer_name_or_path: null
+    torch_dtype: "bfloat16"
+    attn_implementation: "flash_attention_2"
+    target_modules:
+      - "q_proj"
+      - "k_proj"
+      - "v_proj"
+      - "o_proj"
+      - "gate_proj"
+      - "up_proj"
+      - "down_proj"
+    chat_template_name: "llama3"
+
+  mistral_7b_instruct:
+    model_name_or_path: "mistralai/Mistral-7B-Instruct-v0.3"
+    tokenizer_name_or_path: null
+    torch_dtype: "bfloat16"
+    attn_implementation: "flash_attention_2"
+    target_modules:
+      - "q_proj"
+      - "k_proj"
+      - "v_proj"
+      - "o_proj"
+      - "gate_proj"
+      - "up_proj"
+      - "down_proj"
+    chat_template_name: "chatml"
+
+  mistral_7b_base:
+    model_name_or_path: "mistralai/Mistral-7B-v0.3"
+    tokenizer_name_or_path: null
+    torch_dtype: "bfloat16"
+    attn_implementation: "flash_attention_2"
+    target_modules:
+      - "q_proj"
+      - "k_proj"
+      - "v_proj"
+      - "o_proj"
+      - "gate_proj"
+      - "up_proj"
+      - "down_proj"
+    chat_template_name: "chatml"
+
+  gemma_7b_instruct:
+    model_name_or_path: "google/gemma-7b-it"
+    tokenizer_name_or_path: null
+    torch_dtype: "bfloat16"
+    attn_implementation: "flash_attention_2"
+    target_modules:
+      - "q_proj"
+      - "k_proj"
+      - "v_proj"
+      - "o_proj"
+      - "gate_proj"
+      - "up_proj"
+      - "down_proj"
+    chat_template_name: "gemma"
+
+  qwen2_7b_instruct:
+    model_name_or_path: "Qwen/Qwen2-7B-Instruct"
+    tokenizer_name_or_path: null
+    torch_dtype: "bfloat16"
+    attn_implementation: "flash_attention_2"
+    target_modules:
+      - "q_proj"
+      - "k_proj"
+      - "v_proj"
+      - "o_proj"
+      - "gate_proj"
+      - "up_proj"
+      - "down_proj"
+    chat_template_name: "chatml"
+
+  phi3_mini_instruct:
+    model_name_or_path: "microsoft/Phi-3-mini-4k-instruct"
+    tokenizer_name_or_path: null
+    torch_dtype: "bfloat16"
+    attn_implementation: "flash_attention_2"
+    target_modules:
+      - "q_proj"
+      - "k_proj"
+      - "v_proj"
+      - "o_proj"
+      - "gate_proj"
+      - "up_proj"
+      - "down_proj"
+    chat_template_name: "phi3"

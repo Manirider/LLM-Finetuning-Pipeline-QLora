@@ -1,0 +1,724 @@
+# ==============================================================================
+# LOGGING & MLOPS CONFIGURATION
+# ==============================================================================
+# TensorBoard, Weights & Biases, MLflow, Console, File, JSON Logging
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# GLOBAL LOGGING SETTINGS
+# ------------------------------------------------------------------------------
+logging:
+  # Global log level
+  level: "INFO"
+  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+
+  # Log format for structured logging
+  format: "json"
+  # Options: "json", "text", "structured", "key_value"
+
+  # Enable colored console output
+  colored_console: true
+
+  # Timestamp format
+  timestamp_format: "%Y-%m-%d %H:%M:%S.%f"
+  timestamp_utc: true
+
+  # Log directory
+  log_dir: "./logs"
+
+  # Log file naming
+  log_file_pattern: "{name}_{timestamp}.log"
+  file_timestamp_format: "%Y%m%d_%H%M%S"
+
+  # Extra fields added to all log records
+  extra_fields:
+    project: "llm-finetuning"
+    version: "1.0.0"
+    environment: "development"
+    # Auto-populated: git_commit, git_branch, hostname, pid, python_version
+
+# ------------------------------------------------------------------------------
+# CONSOLE LOGGING
+# ------------------------------------------------------------------------------
+console:
+  enabled: true
+  level: "INFO"
+  stream: "stdout"
+  # Options: "stdout", "stderr"
+  format: "colored"
+  # Options: "colored", "plain", "json"
+  show_timestamp: true
+  show_level: true
+  show_logger_name: true
+  show_module: false
+  show_line_number: false
+  # Color scheme
+  colors:
+    DEBUG: "cyan"
+    INFO: "green"
+    WARNING: "yellow"
+    ERROR: "red"
+    CRITICAL: "bold_red"
+
+# ------------------------------------------------------------------------------
+# FILE LOGGING
+# ------------------------------------------------------------------------------
+file:
+  enabled: true
+  level: "DEBUG"
+  filename: "training.log"
+  # Rotation
+  rotation:
+    enabled: true
+    max_bytes: 10485760  # 10 MB
+    backup_count: 10
+    encoding: "utf-8"
+    delay: false
+  # Format
+  format: "json"
+  # Options: "json", "text", "structured"
+  # Compression
+  compression: null
+  # Options: null, "gz", "bz2", "xz"
+
+# ------------------------------------------------------------------------------
+# ERROR/EXCEPTION LOGGING
+# ------------------------------------------------------------------------------
+error_log:
+  enabled: true
+  level: "ERROR"
+  filename: "errors.log"
+  rotation:
+    enabled: true
+    max_bytes: 10485760
+    backup_count: 5
+  # Capture traceback
+  capture_traceback: true
+  # Format traceback
+  traceback_format: "full"
+  # Options: "full", "compact", "minimal"
+
+# ------------------------------------------------------------------------------
+# TRAINING SPECIFIC LOGGING
+# ------------------------------------------------------------------------------
+training_log:
+  enabled: true
+  level: "INFO"
+  filename: "training_metrics.log"
+  # Log training metrics per step
+  log_metrics: true
+  # Metrics to log
+  metrics:
+    - "step"
+    - "epoch"
+    - "loss"
+    - "learning_rate"
+    - "grad_norm"
+    - "tokens_per_second"
+    - "samples_per_second"
+    - "gpu_memory_allocated"
+    - "gpu_memory_reserved"
+    - "gpu_utilization"
+    - "cpu_percent"
+    - "ram_percent"
+  # Log frequency (steps)
+  log_every: 10
+  # Log first step
+  log_first_step: true
+
+# ------------------------------------------------------------------------------
+# EVALUATION LOGGING
+# ------------------------------------------------------------------------------
+evaluation_log:
+  enabled: true
+  level: "INFO"
+  filename: "evaluation.log"
+  # Log evaluation metrics
+  log_metrics: true
+  # Log predictions (sample)
+  log_predictions: true
+  max_predictions_logged: 10
+  # Log per dataset
+  log_per_dataset: true
+
+# ------------------------------------------------------------------------------
+# TENSORBOARD LOGGING
+# ------------------------------------------------------------------------------
+tensorboard:
+  enabled: true
+  log_dir: "./logs/tensorboard"
+  # Experiment naming
+  experiment_name: "{run_name}"
+  comment: ""
+  # Host/port for tensorboard server
+  host: "localhost"
+  port: 6006
+  # Purge orphaned data
+  purge_orphaned_data: true
+  # Queue/flush settings
+  max_queue: 10
+  flush_secs: 30
+  # Graph
+  write_graph: true
+  write_images: false
+  # Profiling
+  profile_batch: 0
+  # Histograms
+  histogram_freq: 1
+  # Embeddings
+  embeddings_freq: 0
+
+  # Scalars to log (auto-detected from metrics)
+  scalar_tags:
+    training:
+      - "train/loss"
+      - "train/learning_rate"
+      - "train/grad_norm"
+      - "train/epoch"
+      - "train/step"
+      - "train/tokens_per_second"
+      - "train/samples_per_second"
+    evaluation:
+      - "eval/loss"
+      - "eval/rouge1"
+      - "eval/rouge2"
+      - "eval/rougeL"
+      - "eval/rougeLsum"
+      - "eval/bleu"
+      - "eval/bertscore_precision"
+      - "eval/bertscore_recall"
+      - "eval/bertscore_f1"
+      - "eval/perplexity"
+      - "eval/distinct_1"
+      - "eval/distinct_2"
+      - "eval/distinct_3"
+      - "eval/distinct_4"
+      - "eval/semantic_similarity"
+      - "eval/pass_at_1"
+      - "eval/pass_at_5"
+      - "eval/pass_at_10"
+      - "eval/pass_at_100"
+    system:
+      - "system/gpu_memory_allocated_gb"
+      - "system/gpu_memory_reserved_gb"
+      - "system/gpu_memory_free_gb"
+      - "system/gpu_utilization_percent"
+      - "system/gpu_temperature_c"
+      - "system/gpu_power_watts"
+      - "system/cpu_percent"
+      - "system/ram_percent"
+      - "system/ram_used_gb"
+      - "system/ram_total_gb"
+    model:
+      - "model/trainable_parameters"
+      - "model/total_parameters"
+      - "model/trainable_percent"
+
+  # Histograms
+  histogram_tags:
+    - "gradients"
+    - "weights"
+    - "weight_gradients_ratio"
+    - "activations"
+    - "attention_scores"
+
+  # Images
+  image_tags:
+    - "attention_maps"
+    - "token_embeddings_tsne"
+    - "loss_landscape"
+
+# ------------------------------------------------------------------------------
+# WEIGHTS & BIASES LOGGING
+# ------------------------------------------------------------------------------
+wandb:
+  enabled: true
+  # Project & Entity
+  project: "llm-finetuning"
+  entity: null
+  # Run
+  name: "{run_name}"
+  id: null
+  resume: "allow"
+  # Group & Job Type
+  group: null
+  job_type: "training"
+  # Tags
+  tags:
+    - "qlora"
+    - "llama3"
+    - "fine-tuning"
+    - "production"
+  # Notes
+  notes: ""
+  # Config
+  config:
+    log_all: true
+    exclude_keys:
+      - "wandb.api_key"
+      - "hf_token"
+      - "openai_api_key"
+  # Logging frequency
+  log_freq: 10
+  # Model logging
+  log_model: true
+  # Options: "all", "best", "last", false
+  log_model_freq: 100
+  # Gradients & Parameters
+  log_gradients: true
+  log_parameters: true
+  log_parameter_stats: true
+  # Watch model
+  watch:
+    enabled: true
+    log: "all"
+    # Options: "gradients", "parameters", "all", false
+    log_freq: 100
+    log_graph: true
+    log_param_shapes: true
+  # Artifacts
+  artifacts:
+    enabled: true
+    log_artifacts: true
+    artifact_dir: "./artifacts"
+    # Artifacts to log
+    artifacts_list:
+      - name: "training_config"
+        type: "config"
+        path: "./configs/training.yaml"
+        description: "Training configuration"
+      - name: "model_config"
+        type: "config"
+        path: "./configs/model.yaml"
+        description: "Model configuration"
+      - name: "data_config"
+        type: "config"
+        path: "./configs/data.yaml"
+        description: "Data configuration"
+      - name: "best_adapter"
+        type: "model"
+        path: "./adapters/best"
+        description: "Best LoRA adapter"
+        aliases: ["best", "latest", "production"]
+      - name: "evaluation_report"
+        type: "report"
+        path: "./outputs/evaluation_report.html"
+        description: "Full evaluation report"
+      - name: "predictions"
+        type: "dataset"
+        path: "./outputs/predictions"
+        description: "Model predictions on eval sets"
+
+  # Sweeps
+  sweep:
+    enabled: false
+    config:
+      method: "bayes"
+      metric:
+        name: "eval/loss"
+        goal: "minimize"
+      parameters:
+        learning_rate:
+          min: 1e-5
+          max: 1e-3
+        lora_r:
+          values: [32, 64, 128]
+        lora_alpha:
+          values: [16, 32, 64]
+        per_device_train_batch_size:
+          values: [2, 4, 8]
+        gradient_accumulation_steps:
+          values: [2, 4, 8]
+        warmup_ratio:
+          min: 0.01
+          max: 0.1
+
+  # Sync
+  sync_tensorboard: true
+  sync_wandb: true
+
+  # Offline/Anonymous
+  offline: false
+  anonymous: "never"
+  # Options: "never", "allow", "must"
+
+  # API
+  api_key: "${WANDB_API_KEY}"
+  base_url: "https://api.wandb.ai"
+  timeout: 30
+
+  # Environment
+  env:
+    WANDB_PROJECT: "llm-finetuning"
+    WANDB_ENTITY: "${WANDB_ENTITY}"
+    WANDB_MODE: "online"
+    WANDB_DIR: "./logs/wandb"
+    WANDB_CACHE_DIR: "./logs/wandb/cache"
+    WANDB_CONFIG_DIR: "./logs/wandb/config"
+    WANDB_RUN_DIR: "./logs/wandb/runs"
+
+# ------------------------------------------------------------------------------
+# MLFLOW LOGGING
+# ------------------------------------------------------------------------------
+mlflow:
+  enabled: false
+  # Tracking
+  tracking_uri: "http://localhost:5000"
+  experiment_name: "llm-finetuning"
+  run_name: "{run_name}"
+  # Tags
+  tags:
+    project: "llm-finetuning"
+    framework: "pytorch"
+    method: "qlora"
+    version: "1.0.0"
+  # Logging
+  log_params: true
+  log_metrics: true
+  log_artifacts: true
+  log_models: true
+  log_model_signature: true
+  log_input_example: true
+  # Model Registry
+  register_model: false
+  model_name: "llm-finetuned-model"
+  model_aliases: ["staging"]
+  # Artifacts
+  artifact_location: "./mlruns"
+  # Autolog
+  autolog:
+    enabled: true
+    log_every_n: 10
+    log_models: true
+    disable: false
+    disable_for_unsupported: true
+    silent: false
+    registered_model_name: null
+
+# ------------------------------------------------------------------------------
+# NEPTUNE.AI LOGGING (Optional)
+# ------------------------------------------------------------------------------
+neptune:
+  enabled: false
+  project: "workspace/llm-finetuning"
+  api_token: "${NEPTUNE_API_TOKEN}"
+  run_name: "{run_name}"
+  tags: ["qlora", "llama3"]
+  capture_stdout: true
+  capture_stderr: true
+  capture_hardware_metrics: true
+  capture_traceback: true
+  log_model: true
+  log_parameters: true
+  log_metrics: true
+  log_artifacts: true
+
+# ------------------------------------------------------------------------------
+# CLEARML LOGGING (Optional)
+# ------------------------------------------------------------------------------
+clearml:
+  enabled: false
+  project_name: "llm-finetuning"
+  task_name: "{run_name}"
+  tags: ["qlora", "llama3"]
+  output_uri: null
+  auto_connect_frameworks:
+    pytorch: true
+    tensorboard: true
+    matplotlib: true
+
+# ------------------------------------------------------------------------------
+# STRUCTURED LOGGING (for log aggregation)
+# ------------------------------------------------------------------------------
+structured:
+  enabled: true
+  # Output to separate JSON lines file
+  json_file:
+    enabled: true
+    filename: "structured_logs.jsonl"
+    rotation:
+      enabled: true
+      max_bytes: 52428800  # 50 MB
+      backup_count: 5
+  # Fields to always include
+  required_fields:
+    - "timestamp"
+    - "level"
+    - "logger"
+    - "message"
+    - "module"
+    - "function"
+    - "line"
+    - "thread"
+    - "process"
+  # Extra context
+  context_fields:
+    - "run_id"
+    - "experiment_id"
+    - "step"
+    - "epoch"
+    - "rank"
+    - "world_size"
+
+# ------------------------------------------------------------------------------
+# LOGGING CALLBACKS (for Trainer)
+# ------------------------------------------------------------------------------
+callbacks:
+  # Training logging callback
+  training_logging:
+    enabled: true
+    log_every: 10
+    log_metrics:
+      - "loss"
+      - "learning_rate"
+      - "grad_norm"
+      - "epoch"
+    log_system: true
+    log_gpu_memory: true
+    log_gpu_utilization: true
+
+  # Evaluation logging callback
+  evaluation_logging:
+    enabled: true
+    log_metrics: true
+    log_predictions: true
+    max_predictions: 5
+    log_per_dataset: true
+
+  # Checkpoint logging callback
+  checkpoint_logging:
+    enabled: true
+    log_saved_checkpoints: true
+    log_best_checkpoint: true
+    log_checkpoint_metrics: true
+
+  # Early stopping logging
+  early_stopping_logging:
+    enabled: true
+    log_patience: true
+    log_best_score: true
+    log_stop_reason: true
+
+  # Profiler logging callback
+  profiler_logging:
+    enabled: false
+    log_every: 100
+    log_dir: "./logs/profiler"
+    activities: ["cpu", "cuda"]
+    record_shapes: true
+    with_stack: true
+    profile_memory: true
+    with_flops: true
+
+# ------------------------------------------------------------------------------
+# EXPERIMENT TRACKING INTEGRATION
+# ------------------------------------------------------------------------------
+experiment_tracking:
+  # Auto-detect and configure from environment
+  auto_detect: true
+  # Primary backend (first enabled)
+  primary_backend: "wandb"
+  # Fallback backends
+  fallback_backends:
+    - "tensorboard"
+    - "mlflow"
+  # Unified metric names
+  metric_mapping:
+    "train_loss": "train/loss"
+    "eval_loss": "eval/loss"
+    "learning_rate": "train/learning_rate"
+    "grad_norm": "train/grad_norm"
+    "gpu_memory": "system/gpu_memory_allocated_gb"
+    "gpu_util": "system/gpu_utilization_percent"
+    "tokens_per_sec": "train/tokens_per_second"
+    "samples_per_sec": "train/samples_per_second"
+
+# ------------------------------------------------------------------------------
+# ALERTING (Optional)
+# ------------------------------------------------------------------------------
+alerting:
+  enabled: false
+  # Webhook URL
+  webhook_url: "${ALERT_WEBHOOK_URL}"
+  # Conditions
+  conditions:
+    - name: "loss_nan"
+      metric: "train/loss"
+      condition: "is_nan"
+      severity: "critical"
+      cooldown: 300
+    - name: "loss_explosion"
+      metric: "train/loss"
+      condition: "> 100"
+      severity: "warning"
+      cooldown: 600
+    - name: "gpu_oom_risk"
+      metric: "system/gpu_memory_allocated_gb"
+      condition: "> 22"
+      severity: "warning"
+      cooldown: 300
+    - name: "gpu_underutilized"
+      metric: "system/gpu_utilization_percent"
+      condition: "< 30"
+      severity: "info"
+      cooldown: 1800
+    - name: "training_stalled"
+      metric: "train/step"
+      condition: "not_increasing_for_300s"
+      severity: "warning"
+      cooldown: 600
+  # Notification channels
+  channels:
+    - "webhook"
+    - "email"
+    - "slack"
+  # Email
+  email:
+    enabled: false
+    smtp_host: "smtp.gmail.com"
+    smtp_port: 587
+    username: "${ALERT_EMAIL_USER}"
+    password: "${ALERT_EMAIL_PASS}"
+    from_addr: "alerts@example.com"
+    to_addrs:
+      - "team@example.com"
+  # Slack
+  slack:
+    enabled: false
+    webhook_url: "${SLACK_WEBHOOK_URL}"
+    channel: "#ml-alerts"
+    username: "Training Bot"
+    icon_emoji: ":robot_face:"
+
+# ------------------------------------------------------------------------------
+# AUDIT LOGGING
+# ------------------------------------------------------------------------------
+audit:
+  enabled: true
+  filename: "audit.log"
+  # Events to log
+  events:
+    - "config_loaded"
+    - "config_changed"
+    - "model_loaded"
+    - "training_started"
+    - "training_completed"
+    - "training_failed"
+    - "checkpoint_saved"
+    - "checkpoint_loaded"
+    - "evaluation_started"
+    - "evaluation_completed"
+    - "model_saved"
+    - "model_pushed_to_hub"
+    - "artifact_logged"
+    - "secret_accessed"
+  # Include user info
+  include_user: true
+  # Include git info
+  include_git: true
+  # Include environment
+  include_env: true
+
+# ------------------------------------------------------------------------------
+# PERFORMANCE LOGGING
+# ------------------------------------------------------------------------------
+performance:
+  enabled: true
+  # System metrics interval (seconds)
+  system_metrics_interval: 10
+  # Log to tensorboard
+  log_to_tensorboard: true
+  # Log to wandb
+  log_to_wandb: true
+  # Metrics to collect
+  metrics:
+    gpu:
+      - "memory_allocated"
+      - "memory_reserved"
+      - "memory_free"
+      - "utilization"
+      - "temperature"
+      - "power"
+      - "clock_graphics"
+      - "clock_memory"
+      - "clock_sm"
+    cpu:
+      - "percent"
+      - "count"
+      - "freq_current"
+      - "freq_min"
+      - "freq_max"
+      - "load_1m"
+      - "load_5m"
+      - "load_15m"
+    memory:
+      - "total"
+      - "available"
+      - "used"
+      - "percent"
+      - "swap_total"
+      - "swap_used"
+      - "swap_percent"
+    disk:
+      - "read_bytes"
+      - "write_bytes"
+      - "read_count"
+      - "write_count"
+    network:
+      - "bytes_sent"
+      - "bytes_recv"
+      - "packets_sent"
+      - "packets_recv"
+
+# ------------------------------------------------------------------------------
+# LOG RETENTION & CLEANUP
+# ------------------------------------------------------------------------------
+retention:
+  # Log files
+  log_files:
+    max_age_days: 30
+    max_total_size_gb: 10
+    delete_on_shutdown: false
+  # Tensorboard
+  tensorboard:
+    max_age_days: 90
+    max_runs: 50
+  # Wandb
+  wandb:
+    sync_offline_runs: true
+    cleanup_offline_runs: true
+    max_offline_runs: 10
+  # Checkpoints
+  checkpoints:
+    max_count: 3
+    keep_best: true
+    keep_last: true
+  # Artifacts
+  artifacts:
+    max_age_days: 90
+    max_total_size_gb: 50
+
+# ------------------------------------------------------------------------------
+# DEBUG LOGGING
+# ------------------------------------------------------------------------------
+debug:
+  enabled: false
+  # Log all function calls
+  log_calls: false
+  # Log all variable assignments
+  log_assignments: false
+  # Log memory allocations
+  log_allocations: false
+  # Log CUDA operations
+  log_cuda: false
+  # Modules to debug
+  modules: []
+  # Exclude modules
+  exclude_modules:
+    - "torch"
+    - "transformers"
+    - "datasets"
+    - "accelerate"
+    - "peft"
+    - "trl"
+    - "bitsandbytes"

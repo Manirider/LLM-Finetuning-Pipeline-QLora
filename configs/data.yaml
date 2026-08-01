@@ -1,0 +1,572 @@
+# ==============================================================================
+# DATA PIPELINE CONFIGURATION
+# ==============================================================================
+# All dataset, preprocessing, formatting, tokenization, and splitting settings
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# DATASET SOURCE CONFIGURATION
+# ------------------------------------------------------------------------------
+datasets:
+  # Primary training dataset
+  - name: "alpaca"
+    # Hugging Face dataset identifier or local path
+    path: "tatsu-lab/alpaca"
+    # Dataset config/subset name (optional)
+    config_name: null
+    # Data files for local datasets (optional)
+    data_files: null
+    # Split to use
+    split: "train"
+    # Streaming mode for large datasets
+    streaming: false
+    # Maximum samples to load (null = all)
+    max_samples: null
+    # Column mapping for standard format
+    column_mapping:
+      instruction: "instruction"
+      input: "input"
+      output: "output"
+      text: null
+    # Dataset weight for mixing (if multiple datasets)
+    weight: 1.0
+
+  # Evaluation datasets
+  - name: "alpaca_eval"
+    path: "tatsu-lab/alpaca_eval"
+    config_name: "alpaca_eval"
+    split: "eval"
+    max_samples: 100
+    column_mapping:
+      instruction: "instruction"
+      input: ""
+      output: "output"
+      text: null
+    weight: 1.0
+    is_eval: true
+
+  - name: "mt_bench"
+    path: "HuggingFaceH4/mt_bench_prompts"
+    split: "test"
+    max_samples: 80
+    column_mapping:
+      instruction: "prompt"
+      input: ""
+      output: ""
+      text: null
+    weight: 1.0
+    is_eval: true
+
+  - name: "gsm8k"
+    path: "gsm8k"
+    config_name: "main"
+    split: "test"
+    max_samples: 200
+    column_mapping:
+      instruction: "question"
+      input: ""
+      output: "answer"
+      text: null
+    weight: 1.0
+    is_eval: true
+
+  - name: "humaneval"
+    path: "openai/humaneval"
+    split: "test"
+    max_samples: 164
+    column_mapping:
+      instruction: "prompt"
+      input: ""
+      output: "canonical_solution"
+      text: null
+    weight: 1.0
+    is_eval: true
+
+  - name: "truthfulqa"
+    path: "truthfulqa/truthful_qa"
+    config_name: "generation"
+    split: "validation"
+    max_samples: 817
+    column_mapping:
+      instruction: "question"
+      input: ""
+      output: "best_answer"
+      text: null
+    weight: 1.0
+    is_eval: true
+
+# ------------------------------------------------------------------------------
+# PROMPT TEMPLATES
+# ------------------------------------------------------------------------------
+# Define how to format examples for different dataset styles
+prompt_templates:
+  # Alpaca format (instruction + input + output)
+  alpaca:
+    template: |
+      ### Instruction:
+      {instruction}
+
+      ### Input:
+      {input}
+
+      ### Response:
+      {output}
+    # If input is empty, use simplified template
+    template_no_input: |
+      ### Instruction:
+      {instruction}
+
+      ### Response:
+      {output}
+    # Separator tokens
+    instruction_key: "instruction"
+    input_key: "input"
+    output_key: "output"
+    # Whether to add EOS token at end
+    add_eos_token: true
+
+  # ChatML format (OpenAI style)
+  chatml:
+    template: |
+      <|im_start|>system
+      {system}<|im_end|>
+      <|im_start|>user
+      {instruction}<|im_end|>
+      <|im_start|>assistant
+      {output}<|im_end|>
+    template_with_input: |
+      <|im_start|>system
+      {system}<|im_end|>
+      <|im_start|>user
+      {instruction}
+
+      {input}<|im_end|>
+      <|im_start|>assistant
+      {output}<|im_end|>
+    system_message: "You are a helpful assistant."
+    instruction_key: "instruction"
+    input_key: "input"
+    output_key: "output"
+    add_eos_token: true
+
+  # Llama-3 format
+  llama3:
+    template: |
+      <|begin_of_text|><|start_header_id|>system<|end_header_id|>
+
+      {system}<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+      {instruction}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+      {output}<|eot_id|>
+    template_with_input: |
+      <|begin_of_text|><|start_header_id|>system<|end_header_id|>
+
+      {system}<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+      {instruction}
+
+      {input}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+      {output}<|eot_id|>
+    system_message: "You are a helpful assistant."
+    instruction_key: "instruction"
+    input_key: "input"
+    output_key: "output"
+    add_eos_token: true
+
+  # Vicuna format
+  vicuna:
+    template: |
+      A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.
+
+      USER: {instruction}
+      ASSISTANT: {output}
+    template_with_input: |
+      A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.
+
+      USER: {instruction}
+
+      {input}
+      ASSISTANT: {output}
+    system_message: "A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions."
+    instruction_key: "instruction"
+    input_key: "input"
+    output_key: "output"
+    add_eos_token: true
+
+  # Zephyr format
+  zephyr:
+    template: |
+      <|system|>
+      {system}</s>
+      <|user|>
+      {instruction}</s>
+      <|assistant|>
+      {output}</s>
+    template_with_input: |
+      <|system|>
+      {system}</s>
+      <|user|>
+      {instruction}
+
+      {input}</s>
+      <|assistant|>
+      {output}</s>
+    system_message: "You are a helpful assistant."
+    instruction_key: "instruction"
+    input_key: "input"
+    output_key: "output"
+    add_eos_token: true
+
+  # Plain text (for pre-training / completion)
+  plain:
+    template: "{text}"
+    instruction_key: null
+    input_key: null
+    output_key: null
+    text_key: "text"
+    add_eos_token: true
+
+  # Custom template (define your own)
+  custom:
+    template: "{instruction}\n\n{output}"
+    template_with_input: "{instruction}\n\n{input}\n\n{output}"
+    instruction_key: "instruction"
+    input_key: "input"
+    output_key: "output"
+    add_eos_token: true
+
+# Default template to use
+default_template: "alpaca"
+
+# ------------------------------------------------------------------------------
+# DATA PROCESSING PIPELINE
+# ------------------------------------------------------------------------------
+processing:
+  # Download & Cache
+  download:
+    cache_dir: "./data/raw"
+    force_redownload: false
+    resume_download: true
+    num_proc: 4
+    max_retries: 3
+
+  # Validation
+  validation:
+    enabled: true
+    # Required columns that must exist
+    required_columns: ["instruction", "output"]
+    # Min/max length for instruction/output (characters)
+    min_instruction_length: 10
+    max_instruction_length: 8192
+    min_output_length: 5
+    max_output_length: 16384
+    # Remove examples with null/empty values
+    drop_nulls: true
+    drop_empty_strings: true
+    # Check for duplicates
+    check_duplicates: true
+    duplicate_subset: ["instruction", "input", "output"]
+    # Language detection (optional)
+    detect_language: false
+    expected_language: "en"
+
+  # Cleaning
+  cleaning:
+    enabled: true
+    # Remove duplicates
+    remove_duplicates: true
+    duplicate_subset: ["instruction", "input", "output"]
+    # Remove nulls
+    remove_nulls: true
+    # Strip whitespace
+    strip_whitespace: true
+    # Remove HTML tags
+    remove_html: false
+    # Normalize unicode
+    normalize_unicode: true
+    # Custom cleaning functions (list of function names)
+    custom_cleaners: []
+
+  # Formatting
+  formatting:
+    enabled: true
+    # Template to apply (from prompt_templates)
+    template: "alpaca"
+    # System message for chat templates
+    system_message: "You are a helpful assistant."
+    # Whether to include input in prompt
+    include_input: true
+    # Add EOS token
+    add_eos_token: true
+    # Format field name in output
+    formatted_field: "text"
+    # Keep original columns
+    keep_original_columns: false
+
+  # Tokenization
+  tokenization:
+    enabled: true
+    # Max sequence length
+    max_seq_length: 2048
+    # Truncation strategy
+    truncation: true
+    truncation_side: "right"
+    # Padding
+    padding: false
+    padding_side: "right"
+    pad_to_multiple_of: 8
+    # Return tensors
+    return_tensors: "pt"
+    # Add special tokens
+    add_special_tokens: true
+    # Tokenizer parallelism
+    num_proc: 4
+    # Batch size for tokenization
+    batch_size: 1000
+    # Text field to tokenize
+    text_field: "text"
+    # Whether to compute token statistics
+    compute_stats: true
+
+  # Statistics Collection
+  statistics:
+    enabled: true
+    # Sample size for stats (null = all)
+    sample_size: 10000
+    # Percentiles to compute
+    percentiles: [0, 25, 50, 75, 90, 95, 99, 100]
+    # Save stats to file
+    save_path: "./data/processed/statistics.json"
+
+# ------------------------------------------------------------------------------
+# DATASET SPLITTING
+# ------------------------------------------------------------------------------
+splitting:
+  enabled: true
+  # Split ratios (must sum to 1.0)
+  ratios:
+    train: 0.90
+    validation: 0.05
+    test: 0.05
+  # Random seed for reproducibility
+  seed: 42
+  # Shuffle before splitting
+  shuffle: true
+  # Stratify by column (optional)
+  stratify_by: null
+  # Minimum samples per split
+  min_train_samples: 100
+  min_val_samples: 10
+  min_test_samples: 10
+  # Split method
+  method: "random"
+  # Options: "random", "sequential", "stratified"
+
+# ------------------------------------------------------------------------------
+# OUTPUT CONFIGURATION
+# ------------------------------------------------------------------------------
+output:
+  # Output directory
+  output_dir: "./data/processed"
+  # Save formats
+  formats:
+    - "arrow"
+    - "jsonl"
+  # Save split datasets
+  save_splits: true
+  # Split filenames
+  filenames:
+    train: "train.arrow"
+    validation: "val.arrow"
+    test: "test.arrow"
+  # Save statistics
+  save_statistics: true
+  stats_filename: "dataset_statistics.json"
+  # Save tokenizer
+  save_tokenizer: false
+  tokenizer_dir: "./data/processed/tokenizer"
+  # Compression
+  compression: "lz4"
+  # Options: null, "gzip", "lz4", "zstd"
+  # Overwrite existing
+  overwrite: true
+
+# ------------------------------------------------------------------------------
+# DATALOADER CONFIGURATION
+# ------------------------------------------------------------------------------
+dataloader:
+  # Training dataloader
+  train:
+    batch_size: 4
+    gradient_accumulation_steps: 4
+    shuffle: true
+    num_workers: 4
+    pin_memory: true
+    drop_last: false
+    persistent_workers: true
+    prefetch_factor: 2
+    timeout: 0
+
+  # Evaluation dataloader
+  eval:
+    batch_size: 4
+    shuffle: false
+    num_workers: 4
+    pin_memory: true
+    drop_last: false
+    persistent_workers: true
+    prefetch_factor: 2
+
+  # Test dataloader
+  test:
+    batch_size: 4
+    shuffle: false
+    num_workers: 4
+    pin_memory: true
+
+  # Data collator
+  collator:
+    type: "DataCollatorForSeq2Seq"
+    # Options: "DataCollatorForLanguageModeling", "DataCollatorForSeq2Seq", "DataCollatorWithPadding"
+    padding: "longest"
+    max_length: 2048
+    pad_to_multiple_of: 8
+    return_tensors: "pt"
+    mlm: false
+    mlm_probability: 0.15
+
+# ------------------------------------------------------------------------------
+# DATA MIXING (for multiple datasets)
+# ------------------------------------------------------------------------------
+mixing:
+  enabled: false
+  # Mixing strategy
+  strategy: "proportional"
+  # Options: "proportional", "equal", "custom"
+  # Custom weights per dataset (if strategy=custom)
+  custom_weights: {}
+  # Interleave datasets
+  interleave: true
+  # Seed for mixing
+  seed: 42
+  # Stop when shortest dataset exhausted
+  stop_on_shortest: false
+
+# ------------------------------------------------------------------------------
+# CURRICULUM LEARNING (optional)
+# ------------------------------------------------------------------------------
+curriculum:
+  enabled: false
+  # Schedule: list of (step, dataset_config) pairs
+  schedule: []
+  # Example:
+  # - step: 0
+  #   datasets:
+  #     - name: "easy_data"
+  #       weight: 1.0
+  # - step: 1000
+  #   datasets:
+  #     - name: "easy_data"
+  #       weight: 0.5
+  #     - name: "hard_data"
+  #       weight: 0.5
+
+# ------------------------------------------------------------------------------
+# STREAMING CONFIGURATION (for large datasets)
+# ------------------------------------------------------------------------------
+streaming:
+  enabled: false
+  # Buffer size for shuffling
+  buffer_size: 10000
+  # Shuffle seed
+  shuffle_seed: 42
+  # Take first N samples (for testing)
+  take_n: null
+
+# ------------------------------------------------------------------------------
+# EXTERNAL DATA SOURCES
+# ------------------------------------------------------------------------------
+external_sources:
+  # Local JSONL files
+  local_jsonl:
+    enabled: false
+    train_path: "./data/raw/train.jsonl"
+    val_path: "./data/raw/val.jsonl"
+    test_path: "./data/raw/test.jsonl"
+
+  # Local CSV files
+  local_csv:
+    enabled: false
+    train_path: "./data/raw/train.csv"
+    val_path: "./data/raw/val.csv"
+    test_path: "./data/raw/test.csv"
+    text_column: "text"
+
+  # Parquet files
+  local_parquet:
+    enabled: false
+    train_path: "./data/raw/train.parquet"
+    val_path: "./data/raw/val.parquet"
+    test_path: "./data/raw/test.parquet"
+
+  # Web dataset (sharded)
+  webdataset:
+    enabled: false
+    urls: []
+    split_names: ["train", "val", "test"]
+
+# ------------------------------------------------------------------------------
+# DATA AUGMENTATION (optional)
+# ------------------------------------------------------------------------------
+augmentation:
+  enabled: false
+  # Back-translation
+  back_translation:
+    enabled: false
+    source_lang: "en"
+    target_langs: ["fr", "de", "es"]
+    model_name: "facebook/mbart-large-50-many-to-many-mmt"
+
+  # Paraphrasing
+  paraphrase:
+    enabled: false
+    model_name: "tuner007/pegasus_paraphrase"
+    num_return_sequences: 1
+
+  # Noise injection
+  noise_injection:
+    enabled: false
+    noise_prob: 0.1
+    noise_types: ["delete", "insert", "swap"]
+
+# ------------------------------------------------------------------------------
+# QUALITY FILTERS (optional)
+# ------------------------------------------------------------------------------
+quality_filters:
+  enabled: false
+  # Perplexity filter
+  perplexity:
+    enabled: false
+    model_name: "gpt2"
+    max_perplexity: 1000
+    device: "cuda"
+
+  # Toxicity filter
+  toxicity:
+    enabled: false
+    model_name: "unitary/toxic-bert"
+    threshold: 0.5
+
+  # Length ratio filter
+  length_ratio:
+    enabled: false
+    min_ratio: 0.1
+    max_ratio: 10.0
+
+  # Repetition filter
+  repetition:
+    enabled: false
+    max_repetition_ratio: 0.5
+    ngram_size: 4

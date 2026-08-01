@@ -1,0 +1,265 @@
+# Release Workflow
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.0.0)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Is this a pre-release?'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract_version.outputs.version }}
+      is_prerelease: ${{ steps.extract_version.outputs.is_prerelease }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version
+        id: extract_version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            PRERELEASE="${{ github.event.inputs.prerelease }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+            PRERELEASE="false"
+          fi
+          
+          # Validate version format
+          if [[ ! $VERSION =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]; then
+            echo "::error::Invalid version format: $VERSION (expected vX.Y.Z or vX.Y.Z-suffix)"
+            exit 1
+          fi
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "is_prerelease=$PRERELEASE" >> $GITHUB_OUTPUT
+          
+          echo "Version: $VERSION"
+          echo "Prerelease: $PRERELEASE"
+
+      - name: Verify changelog
+        run: |
+          if [ ! -f CHANGELOG.md ]; then
+            echo "::warning::CHANGELOG.md not found"
+          else
+            if ! grep -q "${{ steps.extract_version.outputs.version }}" CHANGELOG.md; then
+              echo "::warning::Version ${{ steps.extract_version.outputs.version }} not found in CHANGELOG.md"
+            fi
+          fi
+
+      - name: Verify pyproject.toml version
+        run: |
+          PROJECT_VERSION=$(grep '^version = ' pyproject.toml | cut -d'"' -f2)
+          if [ "v$PROJECT_VERSION" != "${{ steps.extract_version.outputs.version }}" ]; then
+            echo "::error::Version mismatch: pyproject.toml has v$PROJECT_VERSION but tag is ${{ steps.extract_version.outputs.version }}"
+            exit 1
+          fi
+
+  test:
+    name: Run Tests
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+          pip install pytest pytest-cov
+
+      - name: Run all tests
+        run: |
+          pytest tests/ -v --tb=short --cov=src --cov-report=term-missing --cov-fail-under=85
+
+  build:
+    name: Build Package
+    needs: [validate, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install build dependencies
+        run: |
+          pip install build twine
+
+      - name: Build package
+        run: |
+          python -m build
+
+      - name: Verify package
+        run: |
+          twine check dist/*
+
+      - name: Upload distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/*
+          retention-days: 30
+
+  docker:
+    name: Build Docker Image
+    needs: [validate, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+  release:
+    name: Create Release
+    needs: [validate, test, build, docker]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download distribution
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.validate.outputs.version }}
+          name: Release ${{ needs.validate.outputs.version }}
+          draft: false
+          prerelease: ${{ needs.validate.outputs.is_prerelease == 'true' }}
+          files: dist/*
+          generate_release_notes: true
+          body_path: CHANGELOG.md
+
+  pypi:
+    name: Publish to PyPI
+    needs: [validate, test, build]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && needs.validate.outputs.is_prerelease == 'false'
+    permissions:
+      id-token: write
+    steps:
+      - name: Download distribution
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          print-hash: true
+          skip-existing: true
+
+  testpypi:
+    name: Publish to TestPyPI
+    needs: [validate, test, build]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && needs.validate.outputs.is_prerelease == 'true'
+    permissions:
+      id-token: write
+    steps:
+      - name: Download distribution
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+
+  notify:
+    name: Notify
+    needs: [validate, test, build, docker, release, pypi, testpypi]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check overall status
+        run: |
+          echo "Release status: ${{ job.status }}"
+          echo "Version: ${{ needs.validate.outputs.version }}"
+          echo "Prerelease: ${{ needs.validate.outputs.is_prerelease }}"
+
+      - name: Send notification
+        if: failure()
+        run: |
+          echo "::error::Release ${{ needs.validate.outputs.version }} failed!"
+          # Add your notification logic here (Slack, Discord, Email, etc.)
+          # curl -X POST -H 'Content-type: application/json' \
+          #   --data '{"text":"Release failed for ${{ github.repository }} version ${{ needs.validate.outputs.version }}"}' \
+          #   $SLACK_WEBHOOK_URL

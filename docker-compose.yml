@@ -1,0 +1,211 @@
+services:
+  # =============================================================================
+  # TRAINING SERVICE
+  # =============================================================================
+  trainer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+      args:
+        INSTALL_FLASH_ATTN: "true"
+    container_name: llm-trainer
+    hostname: trainer
+    runtime: nvidia
+    environment:
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+      - HF_TOKEN=${HF_TOKEN}
+      - WANDB_API_KEY=${WANDB_API_KEY}
+      - WANDB_PROJECT=${WANDB_PROJECT:-llm-finetuning}
+      - WANDB_ENTITY=${WANDB_ENTITY}
+      - TOKENIZERS_PARALLELISM=false
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+      - OMP_NUM_THREADS=8
+    volumes:
+      - ./data:/workspace/data
+      - ./checkpoints:/workspace/checkpoints
+      - ./adapters:/workspace/adapters
+      - ./runs:/workspace/runs
+      - ./logs:/workspace/logs
+      - ./outputs:/workspace/outputs
+      - ./artifacts:/workspace/artifacts
+      - ~/.cache/huggingface:/workspace/.cache/huggingface
+      - ~/.cache/wandb:/workspace/.cache/wandb
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: ["python", "-m", "src.train", "--config", "configs/training.yaml"]
+    restart: "no"
+    shm_size: 32g
+    ulimits:
+      memlock: -1
+      stack: 67108864
+
+  # =============================================================================
+  # EVALUATION SERVICE
+  # =============================================================================
+  evaluator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: llm-evaluator
+    hostname: evaluator
+    runtime: nvidia
+    environment:
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES_EVAL:-0}
+      - HF_TOKEN=${HF_TOKEN}
+      - WANDB_API_KEY=${WANDB_API_KEY}
+      - WANDB_PROJECT=${WANDB_PROJECT:-llm-finetuning-eval}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TOKENIZERS_PARALLELISM=false
+    volumes:
+      - ./data:/workspace/data
+      - ./adapters:/workspace/adapters
+      - ./outputs:/workspace/outputs
+      - ./artifacts:/workspace/artifacts
+      - ~/.cache/huggingface:/workspace/.cache/huggingface
+      - ~/.cache/wandb:/workspace/.cache/wandb
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: ["python", "-m", "src.evaluate", "--config", "configs/evaluation.yaml"]
+    restart: "no"
+    shm_size: 16g
+    depends_on:
+      - trainer
+
+  # =============================================================================
+  # INFERENCE SERVICE (vLLM)
+  # =============================================================================
+  inference:
+    build:
+      context: .
+      dockerfile: Dockerfile.inference
+    container_name: llm-inference
+    hostname: inference
+    runtime: nvidia
+    environment:
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES_INFERENCE:-0}
+      - HF_TOKEN=${HF_TOKEN}
+      - MODEL_PATH=/workspace/adapters/merged
+      - TENSOR_PARALLEL_SIZE=1
+      - GPU_MEMORY_UTILIZATION=0.90
+      - MAX_MODEL_LEN=4096
+      - DTYPE=bfloat16
+    volumes:
+      - ./adapters:/workspace/adapters:ro
+      - ./artifacts/models:/workspace/artifacts/models:ro
+      - ~/.cache/huggingface:/workspace/.cache/huggingface
+    ports:
+      - "8000:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: >
+      python -m vllm.entrypoints.openai.api_server
+      --model /workspace/adapters/merged
+      --tensor-parallel-size 1
+      --gpu-memory-utilization 0.90
+      --max-model-len 4096
+      --dtype bfloat16
+      --host 0.0.0.0
+      --port 8000
+    restart: unless-stopped
+    shm_size: 16g
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # =============================================================================
+  # TENSORBOARD
+  # =============================================================================
+  tensorboard:
+    image: tensorflow/tensorflow:2.16.1
+    container_name: llm-tensorboard
+    hostname: tensorboard
+    ports:
+      - "6006:6006"
+    volumes:
+      - ./logs/tensorboard:/workspace/logs/tensorboard
+    command: tensorboard --logdir /workspace/logs/tensorboard --host 0.0.0.0 --port 6006
+    restart: unless-stopped
+    shm_size: 4g
+
+  # =============================================================================
+  # JUPYTER LAB (Development)
+  # =============================================================================
+  jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: llm-jupyter
+    hostname: jupyter
+    runtime: nvidia
+    environment:
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+      - JUPYTER_TOKEN=${JUPYTER_TOKEN:-llm-finetuning}
+    volumes:
+      - ./:/workspace
+      - ~/.cache/huggingface:/workspace/.cache/huggingface
+    ports:
+      - "8888:8888"
+    command: jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token=${JUPYTER_TOKEN}
+    restart: unless-stopped
+    shm_size: 8g
+    profiles:
+      - dev
+
+  # =============================================================================
+  # MERGE ADAPTER SERVICE
+  # =============================================================================
+  merge-adapter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: llm-merge-adapter
+    hostname: merge-adapter
+    runtime: nvidia
+    environment:
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+      - HF_TOKEN=${HF_TOKEN}
+    volumes:
+      - ./adapters:/workspace/adapters
+      - ./artifacts/models:/workspace/artifacts/models
+      - ~/.cache/huggingface:/workspace/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: ["python", "-m", "scripts.merge_adapter", "--base_model", "meta-llama/Meta-Llama-3-8B-Instruct", "--adapter_path", "/workspace/adapters/best", "--output_path", "/workspace/artifacts/models/merged/v1.0.0"]
+    restart: "no"
+    shm_size: 16g
+
+volumes:
+  hf_cache:
+  wandb_cache:
+
+networks:
+  default:
+    name: llm-finetuning-network
+    driver: bridge

@@ -1,0 +1,131 @@
+name: Dependency Review
+
+on:
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    - cron: '0 0 * * 1'  # Weekly on Monday
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          config-file: '.github/dependency-review-config.yml'
+          fail-on-severity: medium
+
+  dependency-scan:
+    name: Dependency Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+          pip install pip-audit safety
+
+      - name: Run pip-audit
+        run: |
+          pip-audit --desc --format=json --output=pip-audit-report.json || true
+
+      - name: Run safety check
+        run: |
+          safety check --json --output safety-report.json || true
+
+      - name: Upload pip-audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: pip-audit-report
+          path: pip-audit-report.json
+          retention-days: 30
+
+      - name: Upload safety report
+        uses: actions/upload-artifact@v4
+        with:
+          name: safety-report
+          path: safety-report.json
+          retention-days: 30
+
+      - name: Upload to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: pip-audit-report.json
+          category: pip-audit
+
+  outdated-dependencies:
+    name: Check Outdated Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install pip-tools
+        run: pip install pip-tools
+
+      - name: Check outdated
+        run: |
+          pip list --outdated --format=json > outdated.json
+          echo "Outdated packages:"
+          cat outdated.json | jq -r '.[] | "\(.name): \(.version) -> \(.latest_version)"'
+          
+          # Count outdated
+          OUTDATED_COUNT=$(cat outdated.json | jq 'length')
+          echo "Total outdated: $OUTDATED_COUNT"
+          
+          if [[ $OUTDATED_COUNT -gt 0 ]]; then
+            echo "outdated_count=$OUTDATED_COUNT" >> $GITHUB_OUTPUT
+            echo "has_outdated=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_outdated=false" >> $GITHUB_OUTPUT
+          fi
+        id: outdated
+
+      - name: Comment PR
+        if: github.event_name == 'pull_request' && steps.outdated.outputs.has_outdated == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const outdated = JSON.parse(fs.readFileSync('outdated.json', 'utf8'));
+            
+            let body = `## 📦 Outdated Dependencies\n\n`;
+            body += `| Package | Current | Latest |\n`;
+            body += `|---------|---------|--------|\n`;
+            
+            for (const pkg of outdated) {
+              body += `| ${pkg.name} | ${pkg.version} | ${pkg.latest_version} |\n`;
+            }
+            
+            body += `\n> Consider updating these dependencies.`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });

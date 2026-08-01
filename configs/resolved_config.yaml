@@ -1,0 +1,1734 @@
+training:
+  trainer:
+    output_dir: ./checkpoints
+    overwrite_output_dir: true
+    save_strategy: steps
+    save_steps: 100
+    save_total_limit: 3
+    load_best_model_at_end: true
+    metric_for_best_model: eval_loss
+    greater_is_better: false
+    save_safetensors: true
+    save_only_model: false
+    num_train_epochs: 3
+    max_steps: -1
+    per_device_train_batch_size: 4
+    per_device_eval_batch_size: 4
+    gradient_accumulation_steps: 4
+    gradient_checkpointing: true
+    gradient_checkpointing_kwargs:
+      use_reentrant: false
+    learning_rate: 0.0002
+    weight_decay: 0.01
+    adam_beta1: 0.9
+    adam_beta2: 0.999
+    adam_epsilon: 1.0e-08
+    max_grad_norm: 1.0
+    optim: adamw_torch
+    optim_args: null
+    lr_scheduler_type: cosine
+    warmup_ratio: 0.03
+    warmup_steps: 0
+    lr_scheduler_kwargs: {}
+    fp16: false
+    bf16: true
+    tf32: true
+    half_precision_backend: auto
+    logging_strategy: steps
+    logging_steps: 10
+    logging_first_step: true
+    logging_nan_inf_filter: true
+    logging_dir: ./logs/tensorboard
+    log_level: info
+    log_level_replica: warning
+    log_on_each_node: false
+    disable_tqdm: false
+    report_to:
+    - tensorboard
+    - wandb
+    run_name: llm-finetuning-qlora
+    evaluation_strategy: steps
+    eval_steps: 100
+    eval_delay: 0
+    eval_accumulation_steps: 1
+    prediction_loss_only: false
+    dataloader_num_workers: 4
+    dataloader_pin_memory: true
+    dataloader_drop_last: false
+    dataloader_persistent_workers: true
+    dataloader_prefetch_factor: 2
+    remove_unused_columns: false
+    label_names:
+    - labels
+    data_seed: 42
+    ddp_backend: nccl
+    ddp_find_unused_parameters: false
+    ddp_bucket_cap_mb: 25
+    ddp_timeout: 1800
+    dataloader_shuffle: true
+    seed: 42
+    full_determinism: false
+    torch_compile: false
+    torch_compile_mode: max-autotune
+    torch_compile_backend: inductor
+    auto_find_batch_size: false
+    push_to_hub: false
+    hub_model_id: ''
+    hub_strategy: every_save
+    hub_token: ''
+    hub_private_repo: false
+    hub_always_push: false
+    resume_from_checkpoint: null
+    ignore_data_skip: false
+    fsdp: ''
+    fsdp_config: null
+    deepspeed: null
+    group_by_length: false
+    length_column_name: length
+    include_inputs_for_metrics: false
+    include_for_metrics: []
+    eval_do_concat_batches: true
+    skip_memory_metrics: false
+    use_legacy_prediction_loop: false
+    push_to_hub_model_id: ''
+    push_to_hub_organization: ''
+    mp_parameters: ''
+    ray_scope: last
+  lora:
+    r: 64
+    lora_alpha: 16
+    lora_dropout: 0.05
+    use_rslora: true
+    use_dora: false
+    init_lora_weights: gaussian
+    target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+    bias: none
+    task_type: CAUSAL_LM
+    inference_mode: false
+    layers_to_transform: null
+    layers_pattern: null
+    rank_pattern: {}
+    alpha_pattern: {}
+    megatron_config: null
+    megatron_core: false
+    lora_plus_scale: null
+    lora_plus_lr_ratio: null
+  quantization:
+    load_in_4bit: true
+    bnb_4bit_quant_type: nf4
+    bnb_4bit_compute_dtype: bfloat16
+    bnb_4bit_use_double_quant: true
+    bnb_4bit_quant_storage: uint8
+    load_in_8bit: false
+    llm_int8_threshold: 6.0
+    llm_int8_has_fp16_weight: false
+    llm_int8_skip_modules: []
+    llm_int8_enable_fp32_cpu_offload: false
+    quantization_config_class: BitsAndBytesConfig
+    bnb_4bit_quant_storage_dtype: uint8
+  sft:
+    max_seq_length: 2048
+    packing: false
+    packing_fn: null
+    dataset_text_field: text
+    dataset_kwargs: {}
+    formatting_func: null
+    neftune_noise_alpha: null
+    dataset_num_proc: 4
+    dataset_batch_size: 1000
+    remove_unused_columns: true
+    shuffle_buffer_size: 10000
+    tokenizer_kwargs:
+      padding: max_length
+      truncation: true
+      max_length: 2048
+      return_tensors: pt
+  optimizer:
+    type: adamw_torch
+    kwargs:
+      betas:
+      - 0.9
+      - 0.999
+      eps: 1.0e-08
+      weight_decay: 0.01
+      foreach: true
+      fused: true
+  scheduler:
+    type: cosine
+    kwargs:
+      num_warmup_steps: 0
+      num_cycles: 0.5
+      last_epoch: -1
+  callbacks:
+    early_stopping:
+      enabled: true
+      patience: 3
+      threshold: 0.001
+      metric_for_best: eval_loss
+      greater_is_better: false
+    checkpoint:
+      enabled: true
+      save_steps: 100
+      save_total_limit: 3
+      save_best: true
+      metric_for_best: eval_loss
+    logging:
+      enabled: true
+      log_steps: 10
+      log_gpu_memory: true
+      log_learning_rate: true
+      log_grad_norm: true
+    profiler:
+      enabled: false
+      profile_steps: 10
+      profile_dir: ./logs/profiler
+      activities:
+      - cpu
+      - cuda
+      record_shapes: true
+      with_stack: true
+    custom_callbacks: []
+  runtime:
+    device: auto
+    device_map: auto
+    max_memory: null
+    low_cpu_mem_usage: true
+    local_rank: -1
+    world_size: 1
+    ddp_backend: nccl
+    empty_cache_steps: 50
+    gc_collect_steps: 100
+    torch_compile: false
+    torch_compile_mode: max-autotune
+    flash_attention: true
+    flash_attention_version: 2
+  experiment:
+    name: llm-finetuning-qlora
+    project: llm-finetuning
+    entity: null
+    tags:
+    - qlora
+    - nf4
+    - llama3
+    notes: ''
+    config_override: {}
+model:
+  model:
+    model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct
+    model_revision: main
+    model_cache_dir: null
+    trust_remote_code: false
+    use_auth_token: true
+    architecture:
+      model_type: llama
+      architecture: LlamaForCausalLM
+      config_class: LlamaConfig
+      hidden_size: 4096
+      intermediate_size: 14336
+      num_hidden_layers: 32
+      num_attention_heads: 32
+      num_key_value_heads: 8
+      max_position_embeddings: 8192
+      rms_norm_eps: 1.0e-05
+      rope_theta: 500000.0
+      rope_scaling: null
+      vocab_size: 128256
+      pad_token_id: null
+      bos_token_id: 128000
+      eos_token_id: 128001
+      tie_word_embeddings: false
+    torch_dtype: bfloat16
+    device_map: auto
+    max_memory: null
+    offload_folder: ./offload
+    offload_state_dict: false
+    offload_buffers: false
+    low_cpu_mem_usage: true
+    use_safetensors: true
+    variant: null
+    attn_implementation: flash_attention_2
+    use_flash_attention_2: true
+    flash_attention_version: 2
+    gradient_checkpointing: true
+    gradient_checkpointing_kwargs:
+      use_reentrant: false
+    use_cache: false
+    quantization_config: null
+    load_in_8bit: false
+    load_in_4bit: true
+  tokenizer:
+    tokenizer_name_or_path: null
+    tokenizer_revision: main
+    tokenizer_cache_dir: null
+    use_auth_token: true
+    use_fast: true
+    padding_side: right
+    truncation_side: right
+    model_max_length: 4096
+    pad_token: null
+    eos_token: null
+    bos_token: null
+    unk_token: null
+    sep_token: null
+    cls_token: null
+    mask_token: null
+    additional_special_tokens: []
+    chat_template: null
+    chat_template_name: llama3
+    tokenizer_kwargs:
+      clean_up_tokenization_spaces: true
+      add_special_tokens: true
+      return_token_type_ids: false
+  peft:
+    peft_type: LORA
+    lora:
+      r: 64
+      lora_alpha: 16
+      lora_dropout: 0.05
+      use_rslora: true
+      use_dora: false
+      init_lora_weights: gaussian
+      target_modules:
+      - q_proj
+      - k_proj
+      - v_proj
+      - o_proj
+      - gate_proj
+      - up_proj
+      - down_proj
+      bias: none
+      task_type: CAUSAL_LM
+      inference_mode: false
+      layers_to_transform: null
+      layers_pattern: null
+      rank_pattern: {}
+      alpha_pattern: {}
+      megatron_config: null
+      megatron_core: false
+      lora_plus_scale: null
+      lora_plus_lr_ratio: null
+    adalora:
+      target_r: 8
+      init_r: 12
+      tinit: 0
+      tfinal: 0
+      deltaT: 10
+      beta1: 0.85
+      beta2: 0.85
+      orth_reg_weight: 0.5
+      total_step: null
+      rank_pattern: {}
+      alpha_pattern: {}
+    ia3:
+      target_modules: []
+      feedforward_modules: []
+      fan_in_fan_out: false
+      init_ia3_weights: true
+  quantization:
+    load_in_4bit: true
+    bnb_4bit_quant_type: nf4
+    bnb_4bit_compute_dtype: bfloat16
+    bnb_4bit_use_double_quant: true
+    bnb_4bit_quant_storage: uint8
+    load_in_8bit: false
+    llm_int8_threshold: 6.0
+    llm_int8_has_fp16_weight: false
+    llm_int8_skip_modules: []
+    llm_int8_enable_fp32_cpu_offload: false
+    quantization_config_class: BitsAndBytesConfig
+    bnb_4bit_quant_storage_dtype: uint8
+  loading:
+    revision: main
+    token: null
+    use_auth_token: true
+    cache_dir: null
+    force_download: false
+    resume_download: null
+    proxies: null
+    local_files_only: false
+    offload_folder: ./offload
+    offload_state_dict: false
+    offload_buffers: false
+    max_memory: null
+    low_cpu_mem_usage: true
+    use_safetensors: true
+    variant: null
+    torch_dtype: bfloat16
+    device_map: auto
+    attn_implementation: flash_attention_2
+    use_flash_attention_2: true
+    gradient_checkpointing: true
+    load_in_8bit: false
+    load_in_4bit: true
+    peft_config: null
+    is_trainable: true
+  saving:
+    save_adapter: true
+    adapter_path: ./adapters/best
+    save_tokenizer: true
+    merge_and_unload: false
+    merged_model_path: ./artifacts/models/merged/v1.0.0
+    merged_dtype: bfloat16
+    safe_serialization: true
+    max_shard_size: 5GB
+    push_to_hub: false
+    hub_model_id: ''
+    hub_private_repo: false
+    hub_token: null
+    commit_message: Upload model
+  inference:
+    max_new_tokens: 512
+    min_new_tokens: 1
+    do_sample: true
+    temperature: 0.7
+    top_p: 0.9
+    top_k: 50
+    repetition_penalty: 1.1
+    length_penalty: 1.0
+    no_repeat_ngram_size: 3
+    early_stopping: true
+    num_beams: 1
+    num_return_sequences: 1
+    typical_p: 1.0
+    epsilon_cutoff: 0.0
+    eta_cutoff: 0.0
+    diversity_penalty: 0.0
+    penalty_alpha: 0.0
+    min_p: 0.0
+    use_cache: true
+    return_dict_in_generate: false
+    output_scores: false
+    output_attentions: false
+    output_hidden_states: false
+    batch_size: 4
+    max_batch_size: 32
+    pad_token_id: null
+    eos_token_id: null
+    use_flash_attention_2: true
+    stream: false
+    stream_options: null
+  model_presets:
+    llama3_8b_instruct:
+      model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct
+      tokenizer_name_or_path: null
+      torch_dtype: bfloat16
+      attn_implementation: flash_attention_2
+      target_modules:
+      - q_proj
+      - k_proj
+      - v_proj
+      - o_proj
+      - gate_proj
+      - up_proj
+      - down_proj
+      chat_template_name: llama3
+    llama3_8b_base:
+      model_name_or_path: meta-llama/Meta-Llama-3-8B
+      tokenizer_name_or_path: null
+      torch_dtype: bfloat16
+      attn_implementation: flash_attention_2
+      target_modules:
+      - q_proj
+      - k_proj
+      - v_proj
+      - o_proj
+      - gate_proj
+      - up_proj
+      - down_proj
+      chat_template_name: llama3
+    mistral_7b_instruct:
+      model_name_or_path: mistralai/Mistral-7B-Instruct-v0.3
+      tokenizer_name_or_path: null
+      torch_dtype: bfloat16
+      attn_implementation: flash_attention_2
+      target_modules:
+      - q_proj
+      - k_proj
+      - v_proj
+      - o_proj
+      - gate_proj
+      - up_proj
+      - down_proj
+      chat_template_name: chatml
+    mistral_7b_base:
+      model_name_or_path: mistralai/Mistral-7B-v0.3
+      tokenizer_name_or_path: null
+      torch_dtype: bfloat16
+      attn_implementation: flash_attention_2
+      target_modules:
+      - q_proj
+      - k_proj
+      - v_proj
+      - o_proj
+      - gate_proj
+      - up_proj
+      - down_proj
+      chat_template_name: chatml
+    gemma_7b_instruct:
+      model_name_or_path: google/gemma-7b-it
+      tokenizer_name_or_path: null
+      torch_dtype: bfloat16
+      attn_implementation: flash_attention_2
+      target_modules:
+      - q_proj
+      - k_proj
+      - v_proj
+      - o_proj
+      - gate_proj
+      - up_proj
+      - down_proj
+      chat_template_name: gemma
+    qwen2_7b_instruct:
+      model_name_or_path: Qwen/Qwen2-7B-Instruct
+      tokenizer_name_or_path: null
+      torch_dtype: bfloat16
+      attn_implementation: flash_attention_2
+      target_modules:
+      - q_proj
+      - k_proj
+      - v_proj
+      - o_proj
+      - gate_proj
+      - up_proj
+      - down_proj
+      chat_template_name: chatml
+    phi3_mini_instruct:
+      model_name_or_path: microsoft/Phi-3-mini-4k-instruct
+      tokenizer_name_or_path: null
+      torch_dtype: bfloat16
+      attn_implementation: flash_attention_2
+      target_modules:
+      - q_proj
+      - k_proj
+      - v_proj
+      - o_proj
+      - gate_proj
+      - up_proj
+      - down_proj
+      chat_template_name: phi3
+data:
+  datasets:
+  - name: alpaca
+    path: tatsu-lab/alpaca
+    config_name: null
+    data_files: null
+    split: train
+    streaming: false
+    max_samples: null
+    column_mapping:
+      instruction: instruction
+      input: input
+      output: output
+      text: null
+    weight: 1.0
+    is_eval: false
+    category: general
+    description: ''
+  - name: alpaca_eval
+    path: tatsu-lab/alpaca_eval
+    config_name: alpaca_eval
+    data_files: null
+    split: eval
+    streaming: false
+    max_samples: 100
+    column_mapping:
+      instruction: instruction
+      input: ''
+      output: output
+      text: null
+    weight: 1.0
+    is_eval: true
+    category: general
+    description: ''
+  - name: mt_bench
+    path: HuggingFaceH4/mt_bench_prompts
+    config_name: null
+    data_files: null
+    split: test
+    streaming: false
+    max_samples: 80
+    column_mapping:
+      instruction: prompt
+      input: ''
+      output: ''
+      text: null
+    weight: 1.0
+    is_eval: true
+    category: general
+    description: ''
+  - name: gsm8k
+    path: gsm8k
+    config_name: main
+    data_files: null
+    split: test
+    streaming: false
+    max_samples: 200
+    column_mapping:
+      instruction: question
+      input: ''
+      output: answer
+      text: null
+    weight: 1.0
+    is_eval: true
+    category: general
+    description: ''
+  - name: humaneval
+    path: openai/humaneval
+    config_name: null
+    data_files: null
+    split: test
+    streaming: false
+    max_samples: 164
+    column_mapping:
+      instruction: prompt
+      input: ''
+      output: canonical_solution
+      text: null
+    weight: 1.0
+    is_eval: true
+    category: general
+    description: ''
+  - name: truthfulqa
+    path: truthfulqa/truthful_qa
+    config_name: generation
+    data_files: null
+    split: validation
+    streaming: false
+    max_samples: 817
+    column_mapping:
+      instruction: question
+      input: ''
+      output: best_answer
+      text: null
+    weight: 1.0
+    is_eval: true
+    category: general
+    description: ''
+  prompt_templates:
+    alpaca:
+      template: '### Instruction:
+
+        {instruction}
+
+
+        ### Input:
+
+        {input}
+
+
+        ### Response:
+
+        {output}
+
+        '
+      template_with_input: null
+      system_message: You are a helpful assistant.
+      instruction_key: instruction
+      input_key: input
+      output_key: output
+      text_key: text
+      add_eos_token: true
+    chatml:
+      template: '<|im_start|>system
+
+        {system}<|im_end|>
+
+        <|im_start|>user
+
+        {instruction}<|im_end|>
+
+        <|im_start|>assistant
+
+        {output}<|im_end|>
+
+        '
+      template_with_input: '<|im_start|>system
+
+        {system}<|im_end|>
+
+        <|im_start|>user
+
+        {instruction}
+
+
+        {input}<|im_end|>
+
+        <|im_start|>assistant
+
+        {output}<|im_end|>
+
+        '
+      system_message: You are a helpful assistant.
+      instruction_key: instruction
+      input_key: input
+      output_key: output
+      text_key: text
+      add_eos_token: true
+    llama3:
+      template: '<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+
+
+        {system}<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+
+        {instruction}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+
+        {output}<|eot_id|>
+
+        '
+      template_with_input: '<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+
+
+        {system}<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+
+        {instruction}
+
+
+        {input}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+
+        {output}<|eot_id|>
+
+        '
+      system_message: You are a helpful assistant.
+      instruction_key: instruction
+      input_key: input
+      output_key: output
+      text_key: text
+      add_eos_token: true
+    vicuna:
+      template: 'A chat between a curious user and an artificial intelligence assistant.
+        The assistant gives helpful, detailed, and polite answers to the user''s questions.
+
+
+        USER: {instruction}
+
+        ASSISTANT: {output}
+
+        '
+      template_with_input: 'A chat between a curious user and an artificial intelligence
+        assistant. The assistant gives helpful, detailed, and polite answers to the
+        user''s questions.
+
+
+        USER: {instruction}
+
+
+        {input}
+
+        ASSISTANT: {output}
+
+        '
+      system_message: A chat between a curious user and an artificial intelligence
+        assistant. The assistant gives helpful, detailed, and polite answers to the
+        user's questions.
+      instruction_key: instruction
+      input_key: input
+      output_key: output
+      text_key: text
+      add_eos_token: true
+    zephyr:
+      template: '<|system|>
+
+        {system}</s>
+
+        <|user|>
+
+        {instruction}</s>
+
+        <|assistant|>
+
+        {output}</s>
+
+        '
+      template_with_input: '<|system|>
+
+        {system}</s>
+
+        <|user|>
+
+        {instruction}
+
+
+        {input}</s>
+
+        <|assistant|>
+
+        {output}</s>
+
+        '
+      system_message: You are a helpful assistant.
+      instruction_key: instruction
+      input_key: input
+      output_key: output
+      text_key: text
+      add_eos_token: true
+    plain:
+      template: '{text}'
+      template_with_input: null
+      system_message: You are a helpful assistant.
+      instruction_key: null
+      input_key: null
+      output_key: null
+      text_key: text
+      add_eos_token: true
+    custom:
+      template: '{instruction}
+
+
+        {output}'
+      template_with_input: '{instruction}
+
+
+        {input}
+
+
+        {output}'
+      system_message: You are a helpful assistant.
+      instruction_key: instruction
+      input_key: input
+      output_key: output
+      text_key: text
+      add_eos_token: true
+  default_template: alpaca
+  processing:
+    download:
+      cache_dir: ./data/raw
+      force_redownload: false
+      resume_download: true
+      num_proc: 4
+      max_retries: 3
+    validation:
+      enabled: true
+      required_columns:
+      - instruction
+      - output
+      min_instruction_length: 10
+      max_instruction_length: 8192
+      min_output_length: 5
+      max_output_length: 16384
+      drop_nulls: true
+      drop_empty_strings: true
+      check_duplicates: true
+      duplicate_subset:
+      - instruction
+      - input
+      - output
+      detect_language: false
+      expected_language: en
+    cleaning:
+      enabled: true
+      remove_duplicates: true
+      duplicate_subset:
+      - instruction
+      - input
+      - output
+      remove_nulls: true
+      strip_whitespace: true
+      remove_html: false
+      normalize_unicode: true
+      custom_cleaners: []
+    formatting:
+      enabled: true
+      template: alpaca
+      system_message: You are a helpful assistant.
+      include_input: true
+      add_eos_token: true
+      formatted_field: text
+      keep_original_columns: false
+    tokenization:
+      enabled: true
+      max_seq_length: 2048
+      truncation: true
+      truncation_side: right
+      padding: false
+      padding_side: right
+      pad_to_multiple_of: 8
+      return_tensors: pt
+      add_special_tokens: true
+      num_proc: 4
+      batch_size: 1000
+      text_field: text
+      compute_stats: true
+    statistics:
+      enabled: true
+      sample_size: 10000
+      percentiles:
+      - 0
+      - 25
+      - 50
+      - 75
+      - 90
+      - 95
+      - 99
+      - 100
+      save_path: ./data/processed/statistics.json
+  output:
+    output_dir: ./data/processed
+    formats:
+    - arrow
+    - jsonl
+    save_splits: true
+    filenames:
+      train: train.arrow
+      validation: val.arrow
+      test: test.arrow
+    save_statistics: true
+    stats_filename: dataset_statistics.json
+    save_tokenizer: false
+    tokenizer_dir: ./data/processed/tokenizer
+    compression: lz4
+    overwrite: true
+  dataloader:
+    train:
+      batch_size: 4
+      gradient_accumulation_steps: 4
+      shuffle: true
+      num_workers: 4
+      pin_memory: true
+      drop_last: false
+      persistent_workers: true
+      prefetch_factor: 2
+      timeout: 0
+    eval:
+      batch_size: 4
+      shuffle: false
+      num_workers: 4
+      pin_memory: true
+      drop_last: false
+      persistent_workers: true
+      prefetch_factor: 2
+    test:
+      batch_size: 4
+      shuffle: false
+      num_workers: 4
+      pin_memory: true
+    collator:
+      type: DataCollatorForSeq2Seq
+      padding: longest
+      max_length: 2048
+      pad_to_multiple_of: 8
+      return_tensors: pt
+      mlm: false
+      mlm_probability: 0.15
+  mixing:
+    enabled: false
+    strategy: proportional
+    custom_weights: {}
+    interleave: true
+    seed: 42
+    stop_on_shortest: false
+  streaming:
+    enabled: false
+    buffer_size: 10000
+    shuffle_seed: 42
+    take_n: null
+logging:
+  level: INFO
+  format: json
+  colored_console: true
+  timestamp_format: '%Y-%m-%d %H:%M:%S.%f'
+  timestamp_utc: true
+  log_dir: ./logs
+  log_file_pattern: '{name}_{timestamp}.log'
+  file_timestamp_format: '%Y%m%d_%H%M%S'
+  extra_fields: {}
+  rotation:
+    enabled: true
+    max_bytes: 10485760
+    backup_count: 10
+    encoding: utf-8
+    delay: false
+  console:
+    enabled: true
+    level: INFO
+    stream: stdout
+    format: colored
+    show_timestamp: true
+    show_level: true
+    show_logger_name: true
+    show_module: false
+    show_line_number: false
+    colors:
+      DEBUG: cyan
+      INFO: green
+      WARNING: yellow
+      ERROR: red
+      CRITICAL: bold_red
+  file:
+    enabled: true
+    level: DEBUG
+    filename: training.log
+    rotation:
+      enabled: true
+      max_bytes: 10485760
+      backup_count: 10
+      encoding: utf-8
+      delay: false
+    format: json
+    compression: null
+  error_log:
+    enabled: true
+    level: ERROR
+    filename: errors.log
+    rotation:
+      enabled: true
+      max_bytes: 10485760
+      backup_count: 5
+    capture_traceback: true
+    traceback_format: full
+  training_log:
+    enabled: true
+    level: INFO
+    filename: training_metrics.log
+    log_metrics: true
+    metrics:
+    - step
+    - epoch
+    - loss
+    - learning_rate
+    - grad_norm
+    - tokens_per_second
+    - samples_per_second
+    - gpu_memory_allocated
+    - gpu_memory_reserved
+    - gpu_utilization
+    - cpu_percent
+    - ram_percent
+    log_every: 10
+    log_first_step: true
+  tensorboard:
+    enabled: true
+    log_dir: ./logs/tensorboard
+    experiment_name: '{run_name}'
+    comment: ''
+    host: localhost
+    port: 6006
+    purge_orphaned_data: true
+    max_queue: 10
+    flush_secs: 30
+    write_graph: true
+    write_images: false
+    profile_batch: 0
+    histogram_freq: 1
+    embeddings_freq: 0
+    scalar_tags:
+      training:
+      - train/loss
+      - train/learning_rate
+      - train/grad_norm
+      - train/epoch
+      - train/step
+      - train/tokens_per_second
+      - train/samples_per_second
+      evaluation:
+      - eval/loss
+      - eval/rouge1
+      - eval/rouge2
+      - eval/rougeL
+      - eval/rougeLsum
+      - eval/bleu
+      - eval/bertscore_precision
+      - eval/bertscore_recall
+      - eval/bertscore_f1
+      - eval/perplexity
+      - eval/distinct_1
+      - eval/distinct_2
+      - eval/distinct_3
+      - eval/distinct_4
+      - eval/semantic_similarity
+      - eval/pass_at_1
+      - eval/pass_at_5
+      - eval/pass_at_10
+      - eval/pass_at_100
+      system:
+      - system/gpu_memory_allocated_gb
+      - system/gpu_memory_reserved_gb
+      - system/gpu_memory_free_gb
+      - system/gpu_utilization_percent
+      - system/gpu_temperature_c
+      - system/gpu_power_watts
+      - system/cpu_percent
+      - system/ram_percent
+      - system/ram_used_gb
+      - system/ram_total_gb
+      model:
+      - model/trainable_parameters
+      - model/total_parameters
+      - model/trainable_percent
+    histogram_tags:
+    - gradients
+    - weights
+    - weight_gradients_ratio
+    - activations
+    - attention_scores
+    image_tags:
+    - attention_maps
+    - token_embeddings_tsne
+    - loss_landscape
+  wandb:
+    enabled: true
+    project: llm-finetuning
+    entity: null
+    name: '{run_name}'
+    id: null
+    resume: allow
+    group: null
+    job_type: training
+    tags:
+    - qlora
+    - llama3
+    - fine-tuning
+    - production
+    notes: ''
+    config:
+      log_all: true
+      exclude_keys:
+      - wandb.api_key
+      - hf_token
+      - openai_api_key
+    log_freq: 10
+    log_model: true
+    log_gradients: true
+    log_parameters: true
+    watch:
+      enabled: true
+      log: all
+      log_freq: 100
+      log_graph: true
+      log_param_shapes: true
+    artifacts:
+      enabled: true
+      log_artifacts: true
+      artifact_dir: ./artifacts
+      artifacts_list:
+      - name: training_config
+        type: config
+        path: ./configs/training.yaml
+        description: Training configuration
+      - name: model_config
+        type: config
+        path: ./configs/model.yaml
+        description: Model configuration
+      - name: data_config
+        type: config
+        path: ./configs/data.yaml
+        description: Data configuration
+      - name: best_adapter
+        type: model
+        path: ./adapters/best
+        description: Best LoRA adapter
+        aliases:
+        - best
+        - latest
+        - production
+      - name: evaluation_report
+        type: report
+        path: ./outputs/evaluation_report.html
+        description: Full evaluation report
+      - name: predictions
+        type: dataset
+        path: ./outputs/predictions
+        description: Model predictions on eval sets
+    sweep:
+      enabled: false
+      config:
+        method: bayes
+        metric:
+          name: eval/loss
+          goal: minimize
+        parameters:
+          learning_rate:
+            min: 1e-5
+            max: 1e-3
+          lora_r:
+            values:
+            - 32
+            - 64
+            - 128
+          lora_alpha:
+            values:
+            - 16
+            - 32
+            - 64
+          per_device_train_batch_size:
+            values:
+            - 2
+            - 4
+            - 8
+          gradient_accumulation_steps:
+            values:
+            - 2
+            - 4
+            - 8
+          warmup_ratio:
+            min: 0.01
+            max: 0.1
+    offline: false
+    anonymous: never
+    sync_tensorboard: true
+    sync_wandb: true
+    api_key: ${WANDB_API_KEY}
+    base_url: https://api.wandb.ai
+    timeout: 30
+  mlflow:
+    enabled: false
+    tracking_uri: http://localhost:5000
+    experiment_name: llm-finetuning
+    run_name: '{run_name}'
+    tags:
+      project: llm-finetuning
+      framework: pytorch
+      method: qlora
+      version: 1.0.0
+    log_params: true
+    log_metrics: true
+    log_artifacts: true
+    log_models: true
+    register_model: false
+    model_name: llm-finetuned-model
+    model_aliases:
+    - staging
+    artifact_location: ./mlruns
+    autolog:
+      enabled: true
+      log_every_n: 10
+      log_models: true
+      disable: false
+      disable_for_unsupported: true
+      silent: false
+      registered_model_name: null
+evaluation:
+  generation:
+    max_new_tokens: 512
+    min_new_tokens: 1
+    early_stopping: true
+    max_length: null
+    do_sample: true
+    temperature: 0.7
+    top_p: 0.9
+    top_k: 50
+    min_p: 0.0
+    typical_p: 1.0
+    repetition_penalty: 1.1
+    length_penalty: 1.0
+    no_repeat_ngram_size: 3
+    encoder_repetition_penalty: 1.0
+    diversity_penalty: 0.0
+    num_beams: 1
+    num_beam_groups: 1
+    num_return_sequences: 1
+    beam_search: false
+    eos_token_id: null
+    pad_token_id: null
+    use_cache: true
+    synced_gpus: false
+    penalty_alpha: 0.0
+    top_k_contrastive: 0
+    watermark: false
+  datasets:
+  - name: alpaca_eval
+    path: tatsu-lab/alpaca_eval
+    config_name: alpaca_eval
+    split: eval
+    subset: null
+    max_samples: 100
+    streaming: false
+    prompt_template: alpaca
+    system_message: You are a helpful assistant.
+    metrics:
+    - rouge
+    - bleu
+    - bertscore
+    - perplexity
+    - distinct
+    weight: 1.0
+    category: instruction_following
+    description: AlpacaEval - instruction following benchmark
+  - name: mt_bench
+    path: HuggingFaceH4/mt_bench_prompts
+    config_name: null
+    split: test
+    subset: null
+    max_samples: 80
+    streaming: false
+    prompt_template: mt_bench
+    system_message: You are a helpful assistant.
+    metrics:
+    - rouge
+    - bleu
+    - bertscore
+    - mt_bench_judge
+    weight: 1.0
+    category: multi_turn_conversation
+    description: MT-Bench - multi-turn conversation benchmark
+  - name: gsm8k
+    path: gsm8k
+    config_name: main
+    split: test
+    subset: null
+    max_samples: 200
+    streaming: false
+    prompt_template: gsm8k
+    system_message: Solve the following math problem step by step.
+    metrics:
+    - exact_match
+    - accuracy
+    - bertscore
+    - perplexity
+    weight: 1.0
+    category: mathematical_reasoning
+    description: GSM8K - grade school math problems
+  - name: math
+    path: hendrycks/math
+    config_name: null
+    split: test
+    subset: null
+    max_samples: 100
+    streaming: false
+    prompt_template: math
+    system_message: Solve the following math problem.
+    metrics:
+    - exact_match
+    - accuracy
+    - bertscore
+    weight: 0.5
+    category: mathematical_reasoning
+    description: MATH - competition mathematics
+  - name: humaneval
+    path: openai/humaneval
+    config_name: null
+    split: test
+    subset: null
+    max_samples: 164
+    streaming: false
+    prompt_template: humaneval
+    system_message: Write a Python function to solve the problem.
+    metrics:
+    - pass_at_k
+    - bertscore
+    - perplexity
+    weight: 1.0
+    category: code_generation
+    description: HumanEval - code generation benchmark
+  - name: mbpp
+    path: mbpp
+    config_name: full
+    split: test
+    subset: null
+    max_samples: 200
+    streaming: false
+    prompt_template: mbpp
+    system_message: Write a Python function to solve the problem.
+    metrics:
+    - pass_at_k
+    - bertscore
+    weight: 0.5
+    category: code_generation
+    description: MBPP - basic programming problems
+  - name: truthfulqa
+    path: truthfulqa/truthful_qa
+    config_name: generation
+    split: validation
+    subset: null
+    max_samples: 817
+    streaming: false
+    prompt_template: truthfulqa
+    system_message: Answer the following question truthfully.
+    metrics:
+    - truthfulness
+    - informativeness
+    - bertscore
+    - perplexity
+    weight: 1.0
+    category: factuality
+    description: TruthfulQA - truthfulness benchmark
+  - name: halueval
+    path: pminervini/HaluEval
+    config_name: qa
+    split: test
+    subset: null
+    max_samples: 500
+    streaming: false
+    prompt_template: halueval
+    system_message: Answer the question based on the context.
+    metrics:
+    - hallucination_rate
+    - bertscore
+    - accuracy
+    weight: 0.5
+    category: factuality
+    description: HaluEval - hallucination detection
+  - name: cnn_dailymail
+    path: cnn_dailymail
+    config_name: 3.0.0
+    split: test
+    subset: null
+    max_samples: 200
+    streaming: false
+    prompt_template: summarization
+    system_message: Summarize the following article.
+    metrics:
+    - rouge
+    - bertscore
+    - perplexity
+    weight: 0.5
+    category: summarization
+    description: CNN/DailyMail - news summarization
+  - name: xsum
+    path: xsum
+    config_name: null
+    split: test
+    subset: null
+    max_samples: 200
+    streaming: false
+    prompt_template: summarization
+    system_message: Summarize the following article in one sentence.
+    metrics:
+    - rouge
+    - bertscore
+    weight: 0.5
+    category: summarization
+    description: XSum - extreme summarization
+  - name: wmt14_fr_en
+    path: wmt14
+    config_name: fr-en
+    split: test
+    subset: null
+    max_samples: 500
+    streaming: false
+    prompt_template: translation
+    system_message: Translate French to English.
+    metrics:
+    - bleu
+    - chrf
+    - ter
+    - bertscore
+    weight: 0.3
+    category: translation
+    description: WMT14 French-English translation
+  - name: custom_eval
+    path: ./data/eval/custom.jsonl
+    config_name: null
+    split: test
+    subset: null
+    max_samples: null
+    streaming: false
+    prompt_template: alpaca
+    system_message: You are a helpful assistant.
+    metrics:
+    - rouge
+    - bleu
+    - bertscore
+    - perplexity
+    weight: 0.0
+    category: custom
+    description: Custom evaluation dataset
+  metrics:
+    rouge:
+      enabled: true
+      rouge_types:
+      - rouge1
+      - rouge2
+      - rougeL
+      - rougeLsum
+      use_stemmer: true
+      use_aggregator: true
+      confidence_interval: 0.95
+      bootstrap_samples: 1000
+      tokenizer: null
+      split_summaries: true
+    bleu:
+      enabled: true
+      max_order: 4
+      smooth: true
+      smooth_method: exp
+      smooth_value: 1e-4
+      use_effective_order: true
+      tokenizer: 13a
+      lowercase: false
+      force: false
+    bertscore:
+      enabled: true
+      model_type: microsoft/deberta-xlarge-mnli
+      num_layers: 17
+      batch_size: 32
+      device: cuda
+      rescale_with_baseline: true
+      baseline_path: null
+      lang: en
+      idf: false
+      idf_sents: null
+      verbose: false
+      metrics:
+      - precision
+      - recall
+      - f1
+    perplexity:
+      enabled: true
+      model_id: gpt2-large
+      use_eval_model: false
+      stride: 512
+      max_length: 1024
+      batch_size: 8
+      device: cuda
+      add_start_token: true
+      aggregation: mean
+    distinct:
+      enabled: true
+      n_grams:
+      - 1
+      - 2
+      - 3
+      - 4
+      max_n: 4
+      normalize: true
+    semantic_similarity:
+      enabled: true
+      model_name: sentence-transformers/all-MiniLM-L6-v2
+      batch_size: 32
+      device: cuda
+      normalize_embeddings: true
+      similarity_metric: cosine
+    factcc:
+      enabled: false
+      model_name: google/factcc
+      threshold: 0.5
+      device: cuda
+      batch_size: 16
+    toxicity:
+      enabled: false
+      model_name: unitary/toxic-bert
+      threshold: 0.5
+      device: cuda
+      batch_size: 32
+      labels:
+      - toxicity
+      - severe_toxicity
+      - obscene
+      - threat
+      - insult
+      - identity_attack
+    hallucination:
+      enabled: false
+      model_name: vectara/hallucination_evaluation_model
+      threshold: 0.5
+      device: cuda
+      batch_size: 16
+    pass_at_k:
+      enabled: true
+      k_values:
+      - 1
+      - 5
+      - 10
+      - 100
+      num_samples_per_problem: 20
+      temperature: 0.7
+      top_p: 0.95
+      timeout: 30
+      execution:
+        enabled: true
+        timeout: 30
+        max_workers: 4
+        sandbox: true
+    mt_bench_judge:
+      enabled: true
+      model_name: gpt-4-turbo
+      api_base: https://api.openai.com/v1
+      api_key: ${OPENAI_API_KEY}
+      temperature: 0.0
+      max_tokens: 1024
+      system_prompt: You are a helpful assistant.
+      judge_prompt_template: mt_bench_judge
+      categories:
+      - writing
+      - roleplay
+      - reasoning
+      - math
+      - coding
+      - extraction
+      - stem
+      - humanities
+    exact_match:
+      enabled: true
+      normalize: true
+      ignore_case: true
+      ignore_punctuation: true
+      ignore_numbers: false
+    f1_token:
+      enabled: false
+      average: micro
+    chrf:
+      enabled: true
+      word_order: 2
+      beta: 2.0
+      lowercase: false
+    ter:
+      enabled: false
+      normalized: true
+      case_sensitive: false
+    comet:
+      enabled: false
+      model_name: Unbabel/wmt22-comet-da
+      batch_size: 8
+      device: cuda
+  evaluation:
+    batch_size: 8
+    num_workers: 4
+    device: cuda
+    use_fp16: false
+    use_bf16: true
+    seed: 42
+    max_samples_per_dataset: 100
+    shuffle: true
+    shuffle_seed: 42
+    save_predictions: true
+    save_predictions_path: ./outputs/predictions
+    save_metrics: true
+    save_metrics_path: ./outputs/metrics
+    save_raw_outputs: false
+    log_to_wandb: true
+    log_to_tensorboard: true
+    log_to_mlflow: false
+    wandb_project: llm-finetuning-evaluation
+    wandb_entity: null
+    compute_perplexity: true
+    compute_rouge: true
+    compute_bleu: true
+    compute_bertscore: true
+    compute_distinct: true
+    compute_semantic_similarity: true
+    compute_factcc: false
+    compute_toxicity: false
+    compute_hallucination: false
+    compute_pass_at_k: true
+    compute_chrf: true
+    compute_ter: false
+    compute_comet: false
+    temperature: 0.7
+    top_p: 0.95
+    top_k: 50
+    max_new_tokens: 512
+    min_new_tokens: 1
+    do_sample: true
+    repetition_penalty: 1.1
+    pass_at_k_values:
+    - 1
+    - 5
+    - 10
+    - 100
+    num_samples_per_problem: 20
+    pass_at_k_temperature: 0.7
+    pass_at_k_top_p: 0.95
+    compare_with_baseline: true
+    baseline_model: meta-llama/Meta-Llama-3-8B-Instruct
+    baseline_adapter: null
+    statistical_significance: true
+    significance_level: 0.05
+    bootstrap_samples: 1000
+    failure_analysis:
+      enabled: true
+      max_failures: 50
+      categorize_errors: true
+      save_examples: true
+    qualitative_analysis:
+      enabled: true
+      num_examples_per_category: 10
+      categories:
+      - best
+      - worst
+      - median
+      - hallucination
+      - refusal
+  report:
+    enabled: true
+    output_dir: ./outputs/evaluation
+    formats:
+    - html
+    - markdown
+    - json
+    - csv
+    html:
+      enabled: true
+      template: default
+      include_plots: true
+      include_tables: true
+      include_examples: true
+      max_examples_per_section: 20
+      theme: light
+    markdown:
+      enabled: true
+      template: github
+      include_tables: true
+      include_plots: true
+      plot_format: png
+    json:
+      enabled: true
+      pretty_print: true
+      include_raw_data: false
+    csv:
+      enabled: true
+      per_dataset: true
+      aggregate: true
+    plots:
+      enabled: true
+      format: png
+      dpi: 300
+      style: seaborn-v0_8-whitegrid
+      palette: husl
+      types:
+      - metric_comparison
+      - radar_chart
+      - score_distribution
+      - confusion_matrix
+      - length_vs_score
+      - category_breakdown
+      - baseline_comparison
+    sections:
+    - executive_summary
+    - methodology
+    - dataset_analysis
+    - metric_results
+    - model_comparison
+    - qualitative_examples
+    - failure_analysis
+    - limitations
+    - recommendations
+  baseline:
+    enabled: true
+    models:
+    - name: base_model
+      path: meta-llama/Meta-Llama-3-8B-Instruct
+      type: hf
+      adapter_path: null
+      label: Llama-3-8B-Instruct (Base)
+    - name: finetuned_model
+      path: ./adapters/best
+      type: adapter
+      base_model: meta-llama/Meta-Llama-3-8B-Instruct
+      label: Llama-3-8B-Instruct (QLoRA)
+    compare_metrics:
+    - rouge1
+    - rouge2
+    - rougeL
+    - bleu
+    - bertscore_f1
+    - perplexity
+    - distinct_1
+    - distinct_2
+    - pass_at_1
+    statistical_tests:
+    - wilcoxon
+    - bootstrap
+    - permutation
+    alpha: 0.05
+    correction: bonferroni

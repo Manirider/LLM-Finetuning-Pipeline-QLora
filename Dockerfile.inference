@@ -1,0 +1,73 @@
+# Inference Dockerfile - optimized for serving
+FROM nvidia/cuda:12.1-runtime-ubuntu22.04 AS inference
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    HF_HOME=/cache/huggingface \
+    TRANSFORMERS_CACHE=/cache/huggingface \
+    HF_DATASETS_CACHE=/cache/huggingface/datasets \
+    TORCH_HOME=/cache/torch \
+    TOKENIZERS_PARALLELISM=false
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-dev \
+    python3.11-venv \
+    git \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create python symlink
+RUN ln -s /usr/bin/python3.11 /usr/bin/python
+
+# Install pip
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+COPY pyproject.toml .
+
+# Install Python dependencies
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir vllm
+
+# Install flash-attn (optional, requires GPU at build time)
+# RUN pip install --no-cache-dir flash-attn --no-build-isolation
+
+# Copy source code
+COPY src/ ./src/
+COPY configs/ ./configs/
+
+# Create necessary directories
+RUN mkdir -p /app/data /app/checkpoints /app/adapters /app/logs /app/outputs /app/artifacts /app/cache
+
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+RUN chown -R appuser:appuser /app
+USER appuser
+
+# Expose ports
+EXPOSE 8000 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python -c "import torch; print('GPU available:', torch.cuda.is_available())" || exit 1
+
+# Default command - vLLM OpenAI-compatible server
+ENTRYPOINT ["python", "-m", "vllm.entrypoints.openai.api_server"]
+CMD ["--model", "/workspace/adapters/merged", \
+     "--tensor-parallel-size", "1", \
+     "--gpu-memory-utilization", "0.90", \
+     "--max-model-len", "4096", \
+     "--dtype", "bfloat16", \
+     "--host", "0.0.0.0", \
+     "--port", "8000"]

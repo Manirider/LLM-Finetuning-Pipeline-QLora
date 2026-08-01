@@ -1,0 +1,727 @@
+# ==============================================================================
+# EVALUATION CONFIGURATION
+# ==============================================================================
+# Metrics, datasets, generation parameters, comparison, and reporting settings
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# GENERATION CONFIGURATION
+# ==============================================================================
+generation:
+  # Token generation
+  max_new_tokens: 512
+  min_new_tokens: 1
+  early_stopping: true
+  max_length: null  # If set, overrides max_new_tokens
+
+  # Sampling
+  do_sample: true
+  temperature: 0.7
+  top_p: 0.9
+  top_k: 50
+  min_p: 0.0
+  typical_p: 1.0
+
+  # Penalties
+  repetition_penalty: 1.1
+  length_penalty: 1.0
+  no_repeat_ngram_size: 3
+  encoder_repetition_penalty: 1.0
+  diversity_penalty: 0.0
+
+  # Beams
+  num_beams: 1
+  num_beam_groups: 1
+  num_return_sequences: 1
+  beam_search: false
+
+  # Stopping
+  eos_token_id: null
+  pad_token_id: null
+  forced_eos_token_id: null
+  forced_bos_token_id: null
+  suppress_tokens: null
+  begin_suppress_tokens: null
+
+  # Advanced
+  use_cache: true
+  synced_gpus: false
+  output_scores: false
+  output_logits: false
+  output_attentions: false
+  output_hidden_states: false
+  return_dict_in_generate: true
+
+  # Contrastive search
+  penalty_alpha: 0.0
+  top_k_contrastive: 0
+
+  # Watermarking
+  watermark: false
+  watermark_config: null
+
+# ------------------------------------------------------------------------------
+# EVALUATION DATASETS
+# ==============================================================================
+datasets:
+  # Instruction Following
+  - name: "alpaca_eval"
+    path: "tatsu-lab/alpaca_eval"
+    config_name: "alpaca_eval"
+    split: "eval"
+    subset: null
+    max_samples: 100
+    streaming: false
+    prompt_template: "alpaca"
+    system_message: "You are a helpful assistant."
+    metrics: ["rouge", "bleu", "bertscore", "perplexity", "distinct"]
+    weight: 1.0
+    category: "instruction_following"
+    description: "AlpacaEval - instruction following benchmark"
+
+  - name: "mt_bench"
+    path: "HuggingFaceH4/mt_bench_prompts"
+    config_name: null
+    split: "test"
+    subset: null
+    max_samples: 80
+    streaming: false
+    prompt_template: "mt_bench"
+    system_message: "You are a helpful assistant."
+    metrics: ["rouge", "bleu", "bertscore", "mt_bench_judge"]
+    weight: 1.0
+    category: "multi_turn_conversation"
+    description: "MT-Bench - multi-turn conversation benchmark"
+
+  # Reasoning
+  - name: "gsm8k"
+    path: "gsm8k"
+    config_name: "main"
+    split: "test"
+    subset: null
+    max_samples: 200
+    streaming: false
+    prompt_template: "gsm8k"
+    system_message: "Solve the following math problem step by step."
+    metrics: ["exact_match", "accuracy", "bertscore", "perplexity"]
+    weight: 1.0
+    category: "mathematical_reasoning"
+    description: "GSM8K - grade school math problems"
+
+  - name: "math"
+    path: "hendrycks/math"
+    config_name: null
+    split: "test"
+    subset: null
+    max_samples: 100
+    streaming: false
+    prompt_template: "math"
+    system_message: "Solve the following math problem."
+    metrics: ["exact_match", "accuracy", "bertscore"]
+    weight: 0.5
+    category: "mathematical_reasoning"
+    description: "MATH - competition mathematics"
+
+  # Code Generation
+  - name: "humaneval"
+    path: "openai/humaneval"
+    config_name: null
+    split: "test"
+    subset: null
+    max_samples: 164
+    streaming: false
+    prompt_template: "humaneval"
+    system_message: "Write a Python function to solve the problem."
+    metrics: ["pass_at_k", "bertscore", "perplexity"]
+    weight: 1.0
+    category: "code_generation"
+    description: "HumanEval - code generation benchmark"
+
+  - name: "mbpp"
+    path: "mbpp"
+    config_name: "full"
+    split: "test"
+    subset: null
+    max_samples: 200
+    streaming: false
+    prompt_template: "mbpp"
+    system_message: "Write a Python function to solve the problem."
+    metrics: ["pass_at_k", "bertscore"]
+    weight: 0.5
+    category: "code_generation"
+    description: "MBPP - basic programming problems"
+
+  # Factuality / Truthfulness
+  - name: "truthfulqa"
+    path: "truthfulqa/truthful_qa"
+    config_name: "generation"
+    split: "validation"
+    subset: null
+    max_samples: 817
+    streaming: false
+    prompt_template: "truthfulqa"
+    system_message: "Answer the following question truthfully."
+    metrics: ["truthfulness", "informativeness", "bertscore", "perplexity"]
+    weight: 1.0
+    category: "factuality"
+    description: "TruthfulQA - truthfulness benchmark"
+
+  - name: "halueval"
+    path: "pminervini/HaluEval"
+    config_name: "qa"
+    split: "test"
+    subset: null
+    max_samples: 500
+    streaming: false
+    prompt_template: "halueval"
+    system_message: "Answer the question based on the context."
+    metrics: ["hallucination_rate", "bertscore", "accuracy"]
+    weight: 0.5
+    category: "factuality"
+    description: "HaluEval - hallucination detection"
+
+  # Summarization
+  - name: "cnn_dailymail"
+    path: "cnn_dailymail"
+    config_name: "3.0.0"
+    split: "test"
+    subset: null
+    max_samples: 200
+    streaming: false
+    prompt_template: "summarization"
+    system_message: "Summarize the following article."
+    metrics: ["rouge", "bertscore", "perplexity"]
+    weight: 0.5
+    category: "summarization"
+    description: "CNN/DailyMail - news summarization"
+
+  - name: "xsum"
+    path: "xsum"
+    config_name: null
+    split: "test"
+    subset: null
+    max_samples: 200
+    streaming: false
+    prompt_template: "summarization"
+    system_message: "Summarize the following article in one sentence."
+    metrics: ["rouge", "bertscore"]
+    weight: 0.5
+    category: "summarization"
+    description: "XSum - extreme summarization"
+
+  # Translation
+  - name: "wmt14_fr_en"
+    path: "wmt14"
+    config_name: "fr-en"
+    split: "test"
+    subset: null
+    max_samples: 500
+    streaming: false
+    prompt_template: "translation"
+    system_message: "Translate French to English."
+    metrics: ["bleu", "chrf", "ter", "bertscore"]
+    weight: 0.3
+    category: "translation"
+    description: "WMT14 French-English translation"
+
+  # Custom dataset (example)
+  - name: "custom_eval"
+    path: "./data/eval/custom.jsonl"
+    config_name: null
+    split: "test"
+    subset: null
+    max_samples: null
+    streaming: false
+    prompt_template: "alpaca"
+    system_message: "You are a helpful assistant."
+    metrics: ["rouge", "bleu", "bertscore", "perplexity"]
+    weight: 0.0
+    category: "custom"
+    description: "Custom evaluation dataset"
+
+# ------------------------------------------------------------------------------
+# METRICS CONFIGURATION
+# ==============================================================================
+metrics:
+  # ROUGE Configuration
+  rouge:
+    enabled: true
+    rouge_types:
+      - "rouge1"
+      - "rouge2"
+      - "rougeL"
+      - "rougeLsum"
+    use_stemmer: true
+    use_aggregator: true
+    confidence_interval: 0.95
+    bootstrap_samples: 1000
+    tokenizer: null  # Uses default (rouge-score tokenizer)
+    # For ROUGE-Lsum
+    split_summaries: true
+
+  # BLEU Configuration
+  bleu:
+    enabled: true
+    max_order: 4
+    smooth: true
+    smooth_method: "exp"
+    # Options: "exp", "floor", "add-k", "none"
+    smooth_value: 1e-4
+    use_effective_order: true
+    tokenizer: "13a"
+    # Options: "13a", "zh", "char", "none", "intl"
+    lowercase: false
+    force: false
+
+  # BERTScore Configuration
+  bertscore:
+    enabled: true
+    model_type: "microsoft/deberta-xlarge-mnli"
+    num_layers: 17
+    batch_size: 32
+    device: "cuda"
+    rescale_with_baseline: true
+    baseline_path: null
+    lang: "en"
+    idf: false
+    idf_sents: null
+    verbose: false
+    # Metrics to compute
+    metrics:
+      - "precision"
+      - "recall"
+      - "f1"
+
+  # Perplexity Configuration
+  perplexity:
+    enabled: true
+    model_id: "gpt2-large"
+    # Alternative: use the model being evaluated
+    use_eval_model: false
+    stride: 512
+    max_length: 1024
+    batch_size: 8
+    device: "cuda"
+    add_start_token: true
+    # Aggregation
+    aggregation: "mean"
+    # Options: "mean", "median", "per_sample"
+
+  # Distinct-n Configuration
+  distinct:
+    enabled: true
+    n_grams: [1, 2, 3, 4]
+    max_n: 4
+    # Normalize by total tokens
+    normalize: true
+
+  # Semantic Similarity
+  semantic_similarity:
+    enabled: true
+    model_name: "sentence-transformers/all-MiniLM-L6-v2"
+    batch_size: 32
+    device: "cuda"
+    normalize_embeddings: true
+    similarity_metric: "cosine"
+    # Options: "cosine", "euclidean", "manhattan", "dot"
+
+  # Factual Consistency (FactCC)
+  factcc:
+    enabled: false
+    model_name: "google/factcc"
+    threshold: 0.5
+    device: "cuda"
+    batch_size: 16
+
+  # Toxicity
+  toxicity:
+    enabled: false
+    model_name: "unitary/toxic-bert"
+    threshold: 0.5
+    device: "cuda"
+    batch_size: 32
+    labels:
+      - "toxicity"
+      - "severe_toxicity"
+      - "obscene"
+      - "threat"
+      - "insult"
+      - "identity_attack"
+
+  # Hallucination Detection
+  hallucination:
+    enabled: false
+    model_name: "vectara/hallucination_evaluation_model"
+    threshold: 0.5
+    device: "cuda"
+    batch_size: 16
+
+  # Pass@k (for code generation)
+  pass_at_k:
+    enabled: true
+    k_values: [1, 5, 10, 100]
+    num_samples_per_problem: 20
+    temperature: 0.7
+    top_p: 0.95
+    timeout: 30
+    # Execution
+    execution:
+      enabled: true
+      timeout: 30
+      max_workers: 4
+      sandbox: true
+
+  # MT-Bench Judge
+  mt_bench_judge:
+    enabled: true
+    model_name: "gpt-4-turbo"
+    api_base: "https://api.openai.com/v1"
+    api_key: "${OPENAI_API_KEY}"
+    temperature: 0.0
+    max_tokens: 1024
+    system_prompt: "You are a helpful assistant."
+    judge_prompt_template: "mt_bench_judge"
+    # Categories
+    categories:
+      - "writing"
+      - "roleplay"
+      - "reasoning"
+      - "math"
+      - "coding"
+      - "extraction"
+      - "stem"
+      - "humanities"
+
+  # Exact Match / Accuracy
+  exact_match:
+    enabled: true
+    normalize: true
+    ignore_case: true
+    ignore_punctuation: true
+    ignore_numbers: false
+
+  # F1 Score (token-level)
+  f1_token:
+    enabled: false
+    average: "micro"
+
+  # ChrF (character n-gram F-score)
+  chrf:
+    enabled: true
+    word_order: 2
+    beta: 2.0
+    lowercase: false
+
+  # TER (Translation Edit Rate)
+  ter:
+    enabled: false
+    normalized: true
+    case_sensitive: false
+
+  # COMET (for translation)
+  comet:
+    enabled: false
+    model_name: "Unbabel/wmt22-comet-da"
+    batch_size: 8
+    device: "cuda"
+
+# ------------------------------------------------------------------------------
+# EVALUATION PIPELINE SETTINGS
+# ==============================================================================
+evaluation:
+  # General
+  batch_size: 8
+  num_workers: 4
+  device: "cuda"
+  use_fp16: false
+  use_bf16: true
+  seed: 42
+
+  # Sampling
+  max_samples_per_dataset: 100
+  shuffle: true
+  shuffle_seed: 42
+
+  # Output
+  save_predictions: true
+  save_predictions_path: "./outputs/predictions"
+  save_metrics: true
+  save_metrics_path: "./outputs/metrics"
+  save_raw_outputs: false
+
+  # Logging
+  log_to_wandb: true
+  log_to_tensorboard: true
+  log_to_mlflow: false
+  wandb_project: "llm-finetuning-evaluation"
+  wandb_entity: null
+
+  # Metric Selection
+  compute_perplexity: true
+  compute_rouge: true
+  compute_bleu: true
+  compute_bertscore: true
+  compute_distinct: true
+  compute_semantic_similarity: true
+  compute_factcc: false
+  compute_toxicity: false
+  compute_hallucination: false
+  compute_pass_at_k: true
+  compute_chrf: true
+  compute_ter: false
+  compute_comet: false
+
+  # Generation Parameters (override global)
+  temperature: 0.7
+  top_p: 0.95
+  top_k: 50
+  max_new_tokens: 512
+  min_new_tokens: 1
+  do_sample: true
+  repetition_penalty: 1.1
+
+  # Pass@k specific
+  pass_at_k_values: [1, 5, 10, 100]
+  num_samples_per_problem: 20
+  pass_at_k_temperature: 0.7
+  pass_at_k_top_p: 0.95
+
+  # Comparison
+  compare_with_baseline: true
+  baseline_model: "meta-llama/Meta-Llama-3-8B-Instruct"
+  baseline_adapter: null
+  statistical_significance: true
+  significance_level: 0.05
+  bootstrap_samples: 1000
+
+  # Failure Analysis
+  failure_analysis:
+    enabled: true
+    max_failures: 50
+    categorize_errors: true
+    save_examples: true
+
+  # Qualitative Analysis
+  qualitative_analysis:
+    enabled: true
+    num_examples_per_category: 10
+    categories:
+      - "best"
+      - "worst"
+      - "median"
+      - "hallucination"
+      - "refusal"
+
+# ------------------------------------------------------------------------------
+# REPORT GENERATION
+# ==============================================================================
+report:
+  enabled: true
+  output_dir: "./outputs/evaluation"
+  formats:
+    - "html"
+    - "markdown"
+    - "json"
+    - "csv"
+
+  # HTML Report
+  html:
+    enabled: true
+    template: "default"
+    include_plots: true
+    include_tables: true
+    include_examples: true
+    max_examples_per_section: 20
+    theme: "light"
+    # Options: "light", "dark", "auto"
+
+  # Markdown Report
+  markdown:
+    enabled: true
+    template: "github"
+    include_tables: true
+    include_plots: true
+    plot_format: "png"
+
+  # JSON Report
+  json:
+    enabled: true
+    pretty_print: true
+    include_raw_data: false
+
+  # CSV Report
+  csv:
+    enabled: true
+    per_dataset: true
+    aggregate: true
+
+  # Plots
+  plots:
+    enabled: true
+    format: "png"
+    dpi: 300
+    style: "seaborn-v0_8-whitegrid"
+    palette: "husl"
+    # Plot types
+    types:
+      - "metric_comparison"
+      - "radar_chart"
+      - "score_distribution"
+      - "confusion_matrix"
+      - "length_vs_score"
+      - "category_breakdown"
+      - "baseline_comparison"
+
+  # Sections to include
+  sections:
+    - "executive_summary"
+    - "methodology"
+    - "dataset_analysis"
+    - "metric_results"
+    - "model_comparison"
+    - "qualitative_examples"
+    - "failure_analysis"
+    - "limitations"
+    - "recommendations"
+
+# ------------------------------------------------------------------------------
+# BASELINE COMPARISON
+# ==============================================================================
+baseline:
+  enabled: true
+  models:
+    - name: "base_model"
+      path: "meta-llama/Meta-Llama-3-8B-Instruct"
+      type: "hf"
+      adapter_path: null
+      label: "Llama-3-8B-Instruct (Base)"
+    - name: "finetuned_model"
+      path: "./adapters/best"
+      type: "adapter"
+      base_model: "meta-llama/Meta-Llama-3-8B-Instruct"
+      label: "Llama-3-8B-Instruct (QLoRA)"
+
+  # Comparison metrics
+  compare_metrics:
+    - "rouge1"
+    - "rouge2"
+    - "rougeL"
+    - "bleu"
+    - "bertscore_f1"
+    - "perplexity"
+    - "distinct_1"
+    - "distinct_2"
+    - "pass_at_1"
+
+  # Statistical tests
+  statistical_tests:
+    - "wilcoxon"
+    - "bootstrap"
+    - "permutation"
+
+  # Significance
+  alpha: 0.05
+  correction: "bonferroni"
+
+# ------------------------------------------------------------------------------
+# HUMAN EVALUATION (optional)
+# ==============================================================================
+human_evaluation:
+  enabled: false
+  platform: "label_studio"
+  # Options: "label_studio", "doccano", "custom"
+  annotators: 3
+  guidelines_path: "./docs/evaluation_guidelines.md"
+  samples_per_annotator: 50
+  criteria:
+    - "helpfulness"
+    - "harmlessness"
+    - "honesty"
+    - "coherence"
+    - "relevance"
+  scale: "likert_5"
+  # Options: "likert_5", "likert_7", "pairwise", "ranking"
+
+# ------------------------------------------------------------------------------
+# LLM-AS-JUDGE (for open-ended eval)
+# ==============================================================================
+llm_judge:
+  enabled: true
+  model: "gpt-4-turbo"
+  api_base: "https://api.openai.com/v1"
+  api_key: "${OPENAI_API_KEY}"
+  temperature: 0.0
+  max_tokens: 2048
+  system_prompt: |
+    You are an expert evaluator. Rate the quality of the model response
+    based on the given criteria. Provide a score from 1-10 and brief reasoning.
+  prompt_template: |
+    Instruction: {instruction}
+
+    Reference Answer: {reference}
+
+    Model Answer: {prediction}
+
+    Evaluate the model answer on:
+    1. Accuracy (1-10)
+    2. Completeness (1-10)
+    3. Clarity (1-10)
+    4. Conciseness (1-10)
+
+    Provide scores and brief reasoning.
+  parse_format: "json"
+  categories:
+    - "accuracy"
+    - "completeness"
+    - "clarity"
+    - "conciseness"
+    - "overall"
+  batch_size: 10
+  max_concurrent: 5
+
+# ------------------------------------------------------------------------------
+# BENCHMARKING
+# ==============================================================================
+benchmark:
+  enabled: true
+  # Throughput
+  throughput:
+    enabled: true
+    batch_sizes: [1, 2, 4, 8, 16, 32]
+    seq_lengths: [128, 256, 512, 1024, 2048, 4096]
+    num_runs: 10
+    warmup_runs: 3
+    measure: "tokens_per_second"
+
+  # Latency
+  latency:
+    enabled: true
+    percentiles: [50, 75, 90, 95, 99, 99.9]
+    batch_size: 1
+    seq_length: 512
+    num_runs: 100
+    warmup_runs: 10
+
+  # Memory
+  memory:
+    enabled: true
+    batch_sizes: [1, 2, 4, 8, 16]
+    measure: "peak_memory_gb"
+
+  # Quality vs Speed tradeoff
+  quality_speed:
+    enabled: true
+    temperatures: [0.0, 0.3, 0.5, 0.7, 0.9, 1.0]
+    top_p_values: [0.9, 0.95, 1.0]
+    measure_metrics: ["rougeL", "bertscore_f1", "perplexity"]
+
+# ------------------------------------------------------------------------------
+# CUSTOM METRICS (extensibility)
+# ==============================================================================
+custom_metrics:
+  - name: "custom_metric_name"
+    enabled: false
+    function: "src.metrics.custom_metric_function"
+    params: {}
+    higher_is_better: true
+    description: "Custom evaluation metric"

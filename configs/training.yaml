@@ -1,0 +1,316 @@
+# Training Configuration
+# All training hyperparameters and settings for QLoRA/LoRA fine-tuning
+
+# =============================================================================
+# TRAINER CONFIGURATION (Hugging Face Trainer / SFTTrainer)
+# =============================================================================
+trainer:
+  # Output & Checkpointing
+  output_dir: "./checkpoints"
+  overwrite_output_dir: true
+  save_strategy: "steps"
+  save_steps: 100
+  save_total_limit: 3
+  load_best_model_at_end: true
+  metric_for_best_model: "eval_loss"
+  greater_is_better: false
+  save_safetensors: true
+  save_only_model: false
+
+  # Training Duration
+  num_train_epochs: 3
+  max_steps: -1
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 4
+  gradient_checkpointing: true
+  gradient_checkpointing_kwargs:
+    use_reentrant: false
+
+  # Optimization
+  learning_rate: 2.0e-4
+  weight_decay: 0.01
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1.0e-8
+  max_grad_norm: 1.0
+  optim: "adamw_torch"
+  optim_args: null
+
+  # Learning Rate Scheduler
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  warmup_steps: 0
+  lr_scheduler_kwargs: {}
+
+  # Precision
+  fp16: false
+  bf16: true
+  tf32: true
+  half_precision_backend: "auto"
+
+  # Logging
+  logging_strategy: "steps"
+  logging_steps: 10
+  logging_first_step: true
+  logging_nan_inf_filter: true
+  logging_dir: "./logs/tensorboard"
+  log_level: "info"
+  log_level_replica: "warning"
+  log_on_each_node: false
+  disable_tqdm: false
+  report_to: ["tensorboard", "wandb"]
+  run_name: "llm-finetuning-qlora"
+
+  # Evaluation
+  evaluation_strategy: "steps"
+  eval_steps: 100
+  eval_delay: 0
+  eval_accumulation_steps: 1
+  per_device_eval_batch_size: 4
+  prediction_loss_only: false
+  metric_for_best_model: "eval_loss"
+  greater_is_better: false
+
+  # Data Loading
+  dataloader_num_workers: 4
+  dataloader_pin_memory: true
+  dataloader_drop_last: false
+  dataloader_persistent_workers: true
+  dataloader_prefetch_factor: 2
+  remove_unused_columns: false
+  label_names: ["labels"]
+  data_seed: 42
+
+  # Distributed Training
+  ddp_backend: "nccl"
+  ddp_find_unused_parameters: false
+  ddp_bucket_cap_mb: 25
+  ddp_timeout: 1800
+  dataloader_shuffle: true
+  dataloader_shuffle_train: true
+  dataloader_shuffle_eval: false
+
+  # Reproducibility
+  seed: 42
+  full_determinism: false
+
+  # Performance
+  torch_compile: false
+  torch_compile_mode: "max-autotune"
+  torch_compile_backend: "inductor"
+  auto_find_batch_size: false
+
+  # Hub
+  push_to_hub: false
+  hub_model_id: ""
+  hub_strategy: "every_save"
+  hub_token: ""
+  hub_private_repo: false
+  hub_always_push: false
+
+  # Resume
+  resume_from_checkpoint: null
+  ignore_data_skip: false
+
+  # FSDP / DeepSpeed
+  fsdp: ""
+  fsdp_config: null
+  deepspeed: null
+
+  # Other
+  disable_tqdm: false
+  group_by_length: false
+  length_column_name: "length"
+  include_inputs_for_metrics: false
+  include_for_metrics: []
+  eval_do_concat_batches: true
+  skip_memory_metrics: false
+  use_legacy_prediction_loop: false
+  push_to_hub_model_id: ""
+  push_to_hub_organization: ""
+  mp_parameters: ""
+  ray_scope: "last"
+
+# =============================================================================
+# LoRA CONFIGURATION (PEFT)
+# =============================================================================
+lora:
+  # Rank & Scaling
+  r: 64
+  lora_alpha: 16
+  lora_dropout: 0.05
+  use_rslora: true
+  use_dora: false
+  init_lora_weights: "gaussian"
+
+  # Target Modules (Llama/Mistral architecture)
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+
+  # Bias & Task
+  bias: "none"
+  task_type: "CAUSAL_LM"
+  inference_mode: false
+
+  # Advanced
+  layers_to_transform: null
+  layers_pattern: null
+  rank_pattern: {}
+  alpha_pattern: {}
+  megatron_config: null
+  megatron_core: false
+
+  # LoRA+ (different lr for A/B matrices)
+  lora_plus_scale: null
+  lora_plus_lr_ratio: null
+
+# =============================================================================
+# QLoRA / BITSANDBYTES QUANTIZATION CONFIGURATION
+# =============================================================================
+quantization:
+  # 4-bit Quantization (NF4)
+  load_in_4bit: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "bfloat16"
+  bnb_4bit_use_double_quant: true
+  bnb_4bit_quant_storage: "uint8"
+
+  # 8-bit Quantization (fallback)
+  load_in_8bit: false
+  llm_int8_threshold: 6.0
+  llm_int8_has_fp16_weight: false
+  llm_int8_skip_modules: []
+  llm_int8_enable_fp32_cpu_offload: false
+
+  # Advanced
+  quantization_config_class: "BitsAndBytesConfig"
+  bnb_4bit_quant_storage_dtype: "uint8"
+
+# =============================================================================
+# SFT TRAINER CONFIGURATION (TRL)
+# =============================================================================
+sft:
+  # Sequence & Packing
+  max_seq_length: 2048
+  packing: false
+  packing_fn: null
+  dataset_text_field: "text"
+  dataset_kwargs: {}
+  formatting_func: null
+  neftune_noise_alpha: null
+
+  # Dataset Processing
+  dataset_num_proc: 4
+  dataset_batch_size: 1000
+  remove_unused_columns: true
+  shuffle_buffer_size: 10000
+
+  # Tokenizer
+  tokenizer_kwargs:
+    padding: "max_length"
+    truncation: true
+    max_length: 2048
+    return_tensors: "pt"
+
+# =============================================================================
+# OPTIMIZER / SCHEDULER ADVANCED CONFIG
+# =============================================================================
+optimizer:
+  # AdamW variants
+  type: "adamw_torch"
+  kwargs:
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+    weight_decay: 0.01
+    foreach: true
+    fused: true
+
+scheduler:
+  type: "cosine"
+  kwargs:
+    num_warmup_steps: 0
+    num_cycles: 0.5
+    last_epoch: -1
+
+# =============================================================================
+# CALLBACKS CONFIGURATION
+# =============================================================================
+callbacks:
+  # Early Stopping
+  early_stopping:
+    enabled: true
+    patience: 3
+    threshold: 0.001
+    metric_for_best: "eval_loss"
+    greater_is_better: false
+
+  # Checkpointing
+  checkpoint:
+    enabled: true
+    save_steps: 100
+    save_total_limit: 3
+    save_best: true
+    metric_for_best: "eval_loss"
+
+  # Logging
+  logging:
+    enabled: true
+    log_steps: 10
+    log_gpu_memory: true
+    log_learning_rate: true
+    log_grad_norm: true
+
+  # Profiler
+  profiler:
+    enabled: false
+    profile_steps: 10
+    profile_dir: "./logs/profiler"
+    activities: ["cpu", "cuda"]
+    record_shapes: true
+    with_stack: true
+
+  # Custom
+  custom_callbacks: []
+
+# =============================================================================
+# RUNTIME CONFIGURATION
+# =============================================================================
+runtime:
+  # Device
+  device: "auto"
+  device_map: "auto"
+  max_memory: null
+  low_cpu_mem_usage: true
+
+  # Distributed
+  local_rank: -1
+  world_size: 1
+  ddp_backend: "nccl"
+
+  # Memory
+  empty_cache_steps: 50
+  gc_collect_steps: 100
+
+  # Performance
+  torch_compile: false
+  torch_compile_mode: "max-autotune"
+  flash_attention: true
+  flash_attention_version: 2
+
+# =============================================================================
+# EXPERIMENT TRACKING
+# =============================================================================
+experiment:
+  name: "llm-finetuning-qlora"
+  project: "llm-finetuning"
+  entity: null
+  tags: ["qlora", "nf4", "llama3"]
+  notes: ""
+  config_override: {}
