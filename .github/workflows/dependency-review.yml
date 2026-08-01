@@ -22,7 +22,7 @@ jobs:
         uses: actions/dependency-review-action@v4
         with:
           config-file: '.github/dependency-review-config.yml'
-          fail-on-severity: medium
+          fail-on-severity: moderate
 
   dependency-scan:
     name: Dependency Scan
