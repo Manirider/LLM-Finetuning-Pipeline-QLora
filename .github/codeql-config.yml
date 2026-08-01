@@ -1,81 +1,15 @@
 # CodeQL Configuration
+name: "CodeQL Configuration"
 
-# Queries to run
-queries:
-  - security-and-quality
-  - security-extended
-
-# Paths to include/exclude
+# Paths to include in analysis
 paths:
-  include:
-    - src/
-  exclude:
-    - tests/
-    - docs/
-    - notebooks/
-    - scripts/
-    - "*.pyc"
-    - "__pycache__/"
+  - src
 
-# Language-specific settings
-languages:
-  python:
-    # Additional query packs
-    packs:
-      - python-queries
-      - python-security-queries
-    
-    # Paths specific to Python
-    paths:
-      include:
-        - "src/**/*.py"
-      exclude:
-        - "tests/**"
-        - "**/test_*.py"
-        - "**/*_test.py"
-        - "setup.py"
-
-# Custom queries (if any)
-custom-queries: []
-
-# Severity thresholds
-severity:
-  # Report all findings
-  threshold: warning
-  
-# Alert settings
-alerts:
-  # Only alert on new findings
-  new-only: true
-  
-# Advanced options
-advanced:
-  # Number of threads for analysis
-  threads: 0  # Auto-detect
-  
-  # RAM limit (MB)
-  ram: 4096
-  
-  # Timeout (minutes)
-  timeout: 30
-
-# Ignore patterns (regex)
-ignore-patterns:
-  - "tests/.*"
-  - ".*/test_.*"
-  - ".*_test\\.py"
-  - "setup\\.py"
-  - "conftest\\.py"
-
-# Database configuration
-database:
-  # Build database before analysis
-  build: true
-  
-  # Python-specific options
-  python:
-    # Virtual environment path
-    venv: ".venv"
-    
-    # Use pip for dependencies
-    pip: true
+# Paths to exclude from analysis
+paths-ignore:
+  - tests
+  - docs
+  - notebooks
+  - scripts
+  - "**/test_*.py"
+  - "**/*_test.py"
