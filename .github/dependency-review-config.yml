@@ -9,6 +9,8 @@ allow_licenses:
   - 'Python-2.0'
   - 'MPL-2.0'
 
-fail_on_scopes: 'runtime,development'
+fail_on_scopes:
+  - 'runtime'
+  - 'development'
 
 show_patched_versions: true

@@ -33,21 +33,31 @@ from transformers import (
 )
 
 try:
-    from rouge_score import rouge_scorer
-
-    ROUGE_AVAILABLE = True
+    from rouge_score import rouge_scorer as _rouge_scorer
 except ImportError:
-    ROUGE_AVAILABLE = False
+    _rouge_scorer = None
+
+rouge_scorer = _rouge_scorer
+ROUGE_AVAILABLE = rouge_scorer is not None
 
 try:
     import nltk
-    from nltk.translate.bleu_score import SmoothingFunction, corpus_bleu, sentence_bleu
-    from nltk.translate.meteor_score import meteor_score
-
-    NLTK_AVAILABLE = True
 except ImportError:
     nltk = None
-    NLTK_AVAILABLE = False
+
+try:
+    from nltk.translate.bleu_score import SmoothingFunction, corpus_bleu, sentence_bleu
+except ImportError:
+    SmoothingFunction = None
+    corpus_bleu = None
+    sentence_bleu = None
+
+try:
+    from nltk.translate.meteor_score import meteor_score
+except ImportError:
+    meteor_score = None
+
+NLTK_AVAILABLE = nltk is not None
 
 try:
     import bert_score
@@ -283,11 +293,12 @@ class MetricsCalculator:
 
     def calculate_rouge(self, predictions: list[str], references: list[str]) -> dict[str, float]:
         """Calculate ROUGE scores."""
-        if not ROUGE_AVAILABLE:
+        scorer_module = rouge_scorer
+        if scorer_module is None:
             logger.warning("rouge_score not available, skipping ROUGE")
             return {}
 
-        scorer = rouge_scorer.RougeScorer(
+        scorer = scorer_module.RougeScorer(
             self.rouge_config.rouge_types,
             use_stemmer=self.rouge_config.use_stemmer,
         )
@@ -309,18 +320,12 @@ class MetricsCalculator:
 
     def calculate_bleu(self, predictions: list[str], references: list[str]) -> dict[str, float]:
         """Calculate BLEU scores."""
-        if not NLTK_AVAILABLE and not (
-            hasattr(nltk, "translate") if "nltk" in globals() else False
-        ):
+        if nltk is None and corpus_bleu is None:
             logger.warning("nltk not available, skipping BLEU")
             return {}
 
-        if (
-            "nltk" in globals()
-            and hasattr(nltk, "translate")
-            and hasattr(nltk.translate, "bleu_score")
-        ):
-            corpus_bleu_fn = nltk.translate.bleu_score.corpus_bleu
+        if nltk is not None and hasattr(nltk, "translate") and hasattr(nltk.translate, "bleu_score"):
+            corpus_bleu_fn = getattr(nltk.translate.bleu_score, "corpus_bleu", None)
             SmoothingFunction_cls = getattr(
                 nltk.translate.bleu_score, "SmoothingFunction", SmoothingFunction
             )
@@ -328,13 +333,20 @@ class MetricsCalculator:
             corpus_bleu_fn = corpus_bleu
             SmoothingFunction_cls = SmoothingFunction
 
+        if corpus_bleu_fn is None:
+            logger.warning("nltk not available, skipping BLEU")
+            return {}
+
         try:
-            smoothing = SmoothingFunction_cls()
-            smooth_method = getattr(
-                smoothing,
-                f"method{self.bleu_config.smooth_method}",
-                getattr(smoothing, "method1", None),
-            )
+            if SmoothingFunction_cls is None:
+                smooth_method = None
+            else:
+                smoothing = SmoothingFunction_cls()
+                smooth_method = getattr(
+                    smoothing,
+                    f"method{self.bleu_config.smooth_method}",
+                    getattr(smoothing, "method1", None),
+                )
         except Exception:
             smooth_method = None
 
@@ -364,20 +376,18 @@ class MetricsCalculator:
 
     def calculate_meteor(self, predictions: list[str], references: list[str]) -> dict[str, float]:
         """Calculate METEOR score."""
-        if not NLTK_AVAILABLE and not (
-            hasattr(nltk, "translate") if "nltk" in globals() else False
-        ):
+        if nltk is None and meteor_score is None:
             logger.warning("nltk not available, skipping METEOR")
             return {}
 
-        if (
-            "nltk" in globals()
-            and hasattr(nltk, "translate")
-            and hasattr(nltk.translate, "meteor_score")
-        ):
-            meteor_fn = nltk.translate.meteor_score.meteor_score
+        if nltk is not None and hasattr(nltk, "translate") and hasattr(nltk.translate, "meteor_score"):
+            meteor_fn = getattr(nltk.translate.meteor_score, "meteor_score", None)
         else:
             meteor_fn = meteor_score
+
+        if meteor_fn is None:
+            logger.warning("nltk not available, skipping METEOR")
+            return {}
 
         scores = []
         for pred, ref in zip(predictions, references, strict=False):
@@ -510,10 +520,9 @@ class MetricsCalculator:
             for k, v in bleu_scores.items():
                 metrics[k] = MetricResult(name=k, value=v)
 
-        if NLTK_AVAILABLE:
-            meteor_scores = self.calculate_meteor(predictions, references)
-            for k, v in meteor_scores.items():
-                metrics[k] = MetricResult(name=k, value=v)
+        meteor_scores = self.calculate_meteor(predictions, references)
+        for k, v in meteor_scores.items():
+            metrics[k] = MetricResult(name=k, value=v)
 
         if self.bertscore_config.enabled:
             bert_scores = self.calculate_bertscore(predictions, references)

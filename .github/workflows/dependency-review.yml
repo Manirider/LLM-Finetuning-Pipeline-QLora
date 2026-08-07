@@ -10,10 +10,15 @@ permissions:
   contents: read
   security-events: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   dependency-review:
     name: Dependency Review
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -27,6 +32,7 @@ jobs:
   dependency-scan:
     name: Dependency Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -42,22 +48,40 @@ jobs:
           pip install -e ".[dev]"
           pip install pip-audit safety
 
-      - name: Run pip-audit
+      - name: Run pip-audit (SARIF)
+        id: pip_audit
         run: |
-          pip-audit --desc --format=sarif --output=pip-audit-report.sarif || true
+          pip-audit --desc --format=sarif --output=pip-audit-report.sarif 2>&1 | tee pip-audit-output.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+
+      - name: Run pip-audit (JSON for artifact)
+        run: |
+          pip-audit --desc --format=json --output=pip-audit-report.json 2>&1 | tee -a pip-audit-output.txt || true
 
       - name: Run safety check
+        id: safety
         run: |
-          safety check --json --output safety-report.json || true
+          safety check --json --output=safety-report.json 2>&1 | tee safety-output.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
 
-      - name: Upload pip-audit report
+      - name: Upload pip-audit SARIF report
+        if: always() && steps.pip_audit.outputs.exit_code == '0'
         uses: actions/upload-artifact@v4
         with:
-          name: pip-audit-report
+          name: pip-audit-sarif
           path: pip-audit-report.sarif
           retention-days: 30
 
+      - name: Upload pip-audit JSON report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pip-audit-json
+          path: pip-audit-report.json
+          retention-days: 30
+
       - name: Upload safety report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: safety-report
@@ -65,15 +89,37 @@ jobs:
           retention-days: 30
 
       - name: Upload to GitHub Security
+        if: always() && steps.pip_audit.outputs.exit_code == '0'
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
         with:
           sarif_file: pip-audit-report.sarif
           category: pip-audit
 
+      - name: Check for vulnerabilities
+        if: always()
+        run: |
+          if [ -f pip-audit-report.json ]; then
+            VULNS=$(jq '.vulnerabilities | length' pip-audit-report.json 2>/dev/null || echo 0)
+            if [ "$VULNS" -gt 0 ]; then
+              echo "::warning::Found $VULNS vulnerabilities in dependencies"
+              jq -r '.vulnerabilities[] | "\(.package) \(.installed_version) - \(.vuln_id // "N/A"): \(.description // "No description")"' pip-audit-report.json
+            fi
+          fi
+          if [ -f safety-report.json ]; then
+            SAFETY_VULNS=$(jq 'length' safety-report.json 2>/dev/null || echo 0)
+            if [ "$SAFETY_VULNS" -gt 0 ]; then
+              echo "::warning::Found $SAFETY_VULNS vulnerabilities in safety check"
+              jq -r '.[] | "\(.package) \(.installed_version) - \(.vulnerability_id // "N/A"): \(.advisory // "No advisory")"' safety-report.json
+            fi
+          fi
+
   outdated-dependencies:
     name: Check Outdated Dependencies
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      outdated_count: ${{ steps.outdated.outputs.outdated_count }}
+      has_outdated: ${{ steps.outdated.outputs.has_outdated }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -88,6 +134,7 @@ jobs:
         run: pip install pip-tools
 
       - name: Check outdated
+        id: outdated
         run: |
           pip list --outdated --format=json > outdated.json
           echo "Outdated packages:"
@@ -101,9 +148,9 @@ jobs:
             echo "outdated_count=$OUTDATED_COUNT" >> $GITHUB_OUTPUT
             echo "has_outdated=true" >> $GITHUB_OUTPUT
           else
+            echo "outdated_count=0" >> $GITHUB_OUTPUT
             echo "has_outdated=false" >> $GITHUB_OUTPUT
           fi
-        id: outdated
 
       - name: Comment PR
         if: github.event_name == 'pull_request' && steps.outdated.outputs.has_outdated == 'true'
@@ -123,7 +170,7 @@ jobs:
             
             body += `\n> Consider updating these dependencies.`;
             
-            github.rest.issues.createComment({
+            await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,

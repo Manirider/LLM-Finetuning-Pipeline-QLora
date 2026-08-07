@@ -970,7 +970,9 @@ class DataPipeline:
             return dataset
 
         if self.tokenizer is None:
-            self.load_tokenizer()
+            tokenizer = self.load_tokenizer()
+            if tokenizer is not None:
+                self.tokenizer = tokenizer
 
         logger.info(f"Tokenizing {dataset_name}...")
 
@@ -985,8 +987,11 @@ class DataPipeline:
         batch_size = tok_config.get("batch_size", 1000)
         compute_stats = tok_config.get("compute_stats", True)
 
-        self.tokenizer.truncation_side = truncation_side
-        self.tokenizer.padding_side = padding_side
+        if self.tokenizer is not None:
+            if hasattr(self.tokenizer, "truncation_side"):
+                self.tokenizer.truncation_side = truncation_side
+            if hasattr(self.tokenizer, "padding_side"):
+                self.tokenizer.padding_side = padding_side
 
         def tokenize_batch(examples):
             return self.tokenizer(

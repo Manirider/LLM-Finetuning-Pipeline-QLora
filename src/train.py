@@ -107,7 +107,7 @@ class GradientNormCallback(TrainerCallback):
                     )
                     total_norm += norm_val**2
             total_norm = total_norm**0.5
-            logger.info(f"Step {state.global_step}: grad_norm = {total_norm:.4f}")
+            print(f"Step {state.global_step}: grad_norm = {total_norm:.4f}")
 
 
 class GPUMemoryCallback(TrainerCallback):
@@ -151,7 +151,7 @@ class LearningRateCallback(TrainerCallback):
     ):
         if state.global_step % self.log_freq == 0 and optimizer is not None:
             lr = optimizer.param_groups[0]["lr"]
-            logger.info(f"Step {state.global_step}: learning_rate = {lr:.2e}")
+            print(f"Step {state.global_step}: learning_rate = {lr:.2e}")
 
 
 class ThroughputCallback(TrainerCallback):
